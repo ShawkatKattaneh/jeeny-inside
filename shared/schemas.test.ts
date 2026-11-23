@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
-import { CampusConfig, Cart, RideRequest, Trip } from "./schemas";
+import { CampusConfig, Cart, CartStatePatch, DEFAULT_CART_SPEED_KMH, RideRequest, Trip } from "./schemas";
 import { PERSONAS } from "./personas";
 import { SETTINGS } from "./settings";
 
@@ -133,3 +133,39 @@ describe("domain schemas", () => {
     expect(SETTINGS).toEqual({ fareJod: 0.25, sharedFareJod: 0.25, loyaltyPaidRidesForFree: 5, batteryReservePercent: 15, sharedMaxAddedDelayMinutes: 4 });
   });
 });
+
+describe("cart schema", () => {
+  const base = { id: "CART-03", label: "Cart 03", seats: 4, simulated: true, status: "idle", position: { kind: "at", locationId: "depot" }, batteryPercent: 60, rangeKm: 20, driverId: null };
+  const msgs = (c: unknown) => Cart.safeParse(c).error?.issues.map((i) => `${i.path.join(".")}: ${i.message}`) ?? [];
+
+  it("a valid cart parses; passengers default to 0 and speed to the documented default", () => {
+    expect(Cart.parse(base)).toMatchObject({ passengerCount: 0, maxSpeedKmh: DEFAULT_CART_SPEED_KMH });
+    expect(DEFAULT_CART_SPEED_KMH).toBe(15);
+  });
+
+  it.each([0, -1, 1.5, 9, Number.NaN])("rejects capacity %s", (seats) => {
+    expect(msgs({ ...base, seats })[0]).toMatch(/^seats: /);
+  });
+
+  it.each([0, -3, 41, Number.POSITIVE_INFINITY])("rejects cart speed %s", (maxSpeedKmh) => {
+    expect(msgs({ ...base, maxSpeedKmh })[0]).toMatch(/^maxSpeedKmh: /);
+  });
+
+  it.each([-1, 1.5])("rejects passenger count %s", (passengerCount) => {
+    expect(msgs({ ...base, status: "occupied", passengerCount })[0]).toMatch(/^passengerCount: /);
+  });
+
+  it("rejects a missing or malformed location", () => {
+    const { position: _omit, ...noPosition } = base;
+    expect(msgs(noPosition)[0]).toMatch(/^position: /);
+    expect(msgs({ ...base, position: { kind: "at", locationId: "Not Kebab" } })[0]).toMatch(/^position\.locationId: /);
+    expect(msgs({ ...base, position: { kind: "on_path", pathId: "p", progress: 2 } }).length).toBeGreaterThan(0);
+  });
+
+  it("a state patch accepts only operational fields and never fills defaults", () => {
+    expect(CartStatePatch.parse({ status: "charging" })).toEqual({ status: "charging" });
+    expect(CartStatePatch.safeParse({ seats: 2 }).success).toBe(false);
+    expect(CartStatePatch.safeParse({ maxSpeedKmh: 20 }).success).toBe(false);
+  });
+});
+

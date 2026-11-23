@@ -77,29 +77,95 @@ export const CampusConfig = z
 export type CampusConfig = z.infer<typeof CampusConfig>;
 export type CampusConfigInput = z.input<typeof CampusConfig>;
 
-// ---------- Fleet and rides (shapes only in Phase 0) ----------
+// ---------- Carts ----------
 
 export const CartId = z.string().regex(/^CART-\d{2}$/, "Cart ids look like CART-07");
 
-export const CartStatus = z.enum(["idle", "en_route", "charging", "offline"]);
+/**
+ * Cart operational states (Phase 1 Part 2). Ride-driven states such as driving to a pickup
+ * belong to the ride lifecycle and are not modelled yet.
+ * - idle:        in service, no passengers on board, not committed to anything else.
+ * - occupied:    in service with at least one passenger on board.
+ * - charging:    charging, or set aside to charge. Not available for rides.
+ * - offline:     out of service (for example no driver). Not available.
+ * - maintenance: out of service for repair or inspection. Not available.
+ */
+export const CartStatus = z.enum(["idle", "occupied", "charging", "offline", "maintenance"]);
+export type CartStatus = z.infer<typeof CartStatus>;
 
-export const Cart = z.object({
+/**
+ * Top speed used when a cart file gives none. Prototype assumption, matching the 15 km/h the
+ * existing ETA tests use and the 10-15 km/h path limits on the fictional campuses; not a measured value.
+ */
+export const DEFAULT_CART_SPEED_KMH = 15;
+
+export const CartPosition = z.union([
+  z.object({ kind: z.literal("at"), locationId: LocationId }),
+  z.object({ kind: z.literal("on_path"), pathId: PathId, progress: z.number().min(0).max(1) }),
+]);
+export type CartPosition = z.infer<typeof CartPosition>;
+
+const BatteryPercent = z.number().min(0, "Battery must be between 0 and 100%").max(100, "Battery must be between 0 and 100%");
+const PassengerCount = z.number().int("Passenger count must be a whole number").min(0, "Passenger count cannot be negative");
+
+/**
+ * Specification fields (id, label, seats, maxSpeedKmh, simulated) describe the cart and never change
+ * through a state update. Operational fields change while the cart is in service (see engine/fleet.ts).
+ */
+const CartFields = z.object({
+  // Specification
   id: CartId,
   label: z.string().min(1),
-  seats: z.number().int().min(1).max(8),
-  status: CartStatus,
-  /** Last known location, or the path it is on and how far along it is (0..1). */
-  position: z.union([
-    z.object({ kind: z.literal("at"), locationId: LocationId }),
-    z.object({ kind: z.literal("on_path"), pathId: PathId, progress: z.number().min(0).max(1) }),
-  ]),
-  batteryPercent: z.number().min(0).max(100),
-  rangeKm: z.number().min(0),
+  /** Passenger capacity. */
+  seats: z.number().int("Capacity must be a whole number of seats").min(1, "Capacity must be at least 1 seat").max(8, "Capacity must be 8 seats or fewer"),
+  /** The cart's own top speed. On each path it also never exceeds the path's limit. */
+  maxSpeedKmh: z.number().positive("Cart speed must be greater than 0 km/h").max(40, "Cart speed must be 40 km/h or less").default(DEFAULT_CART_SPEED_KMH),
   /** Simulated carts are labelled as simulated everywhere they appear. */
   simulated: z.boolean(),
+  // Operational state
+  status: CartStatus,
+  /** Last known location, or the path it is on and how far along it is (0..1). */
+  position: CartPosition,
+  batteryPercent: BatteryPercent,
+  rangeKm: z.number().min(0),
+  /** Passengers on board now. */
+  passengerCount: PassengerCount.default(0),
   driverId: z.string().nullable(),
 });
+
+/** A cart's data is consistent: passengers fit, and only an occupied cart carries passengers. */
+export const Cart = CartFields.superRefine((c, ctx) => {
+  if (c.passengerCount > c.seats) {
+    ctx.addIssue({ code: "custom", path: ["passengerCount"], message: `${c.passengerCount} passengers do not fit in ${c.seats} seats` });
+  }
+  if (c.status === "occupied" && c.passengerCount === 0) {
+    ctx.addIssue({ code: "custom", path: ["passengerCount"], message: "An occupied cart must have at least 1 passenger on board" });
+  }
+  if (c.status !== "occupied" && c.passengerCount > 0) {
+    ctx.addIssue({ code: "custom", path: ["status"], message: `A cart with passengers on board must be "occupied", not "${c.status}"` });
+  }
+});
 export type Cart = z.infer<typeof Cart>;
+export type CartInput = z.input<typeof Cart>;
+
+/**
+ * The fields a state update may change. Unknown or specification fields are rejected.
+ * Built without defaults on purpose, so a field left out of an update is never reset.
+ */
+export const CartStatePatch = z
+  .object({
+    status: CartStatus,
+    position: CartPosition,
+    batteryPercent: BatteryPercent,
+    passengerCount: PassengerCount,
+    rangeKm: z.number().min(0),
+    driverId: z.string().nullable(),
+  })
+  .partial()
+  .strict();
+export type CartStatePatch = z.infer<typeof CartStatePatch>;
+
+// ---------- Rides (shapes only) ----------
 
 export const RideRequestStatus = z.enum([
   "requested",

@@ -37,9 +37,9 @@ export const Path = z.object({
   id: PathId,
   from: LocationId,
   to: LocationId,
-  lengthMeters: z.number().positive(),
+  lengthMeters: z.number().positive("Path length must be greater than 0 meters"),
   /** Typical speed on this segment. Carts never exceed it. */
-  speedKmh: z.number().positive().max(40),
+  speedKmh: z.number().positive("Speed limit must be greater than 0 km/h").max(40, "Speed limit must be 40 km/h or less"),
   /** Paths are two-way unless marked otherwise. */
   oneWay: z.boolean().default(false),
 });
@@ -57,18 +57,21 @@ export const CampusConfig = z
     paths: z.array(Path).min(1),
   })
   .superRefine((c, ctx) => {
-    const ids = new Set<string>();
+    // Structural errors only. Graph and map checks live in engine/campusValidation.ts.
+    const ids = new Map<string, number>();
     c.locations.forEach((l, i) => {
-      if (ids.has(l.id)) ctx.addIssue({ code: "custom", path: ["locations", i, "id"], message: `Duplicate location id "${l.id}"` });
-      ids.add(l.id);
+      const first = ids.get(l.id);
+      if (first !== undefined) ctx.addIssue({ code: "custom", path: ["locations", i, "id"], message: `Duplicate location id "${l.id}" (first used by locations.${first})` });
+      else ids.set(l.id, i);
     });
-    const pathIds = new Set<string>();
+    const pathIds = new Map<string, number>();
     c.paths.forEach((p, i) => {
-      if (pathIds.has(p.id)) ctx.addIssue({ code: "custom", path: ["paths", i, "id"], message: `Duplicate path id "${p.id}"` });
-      pathIds.add(p.id);
-      if (!ids.has(p.from)) ctx.addIssue({ code: "custom", path: ["paths", i, "from"], message: `Unknown location "${p.from}"` });
-      if (!ids.has(p.to)) ctx.addIssue({ code: "custom", path: ["paths", i, "to"], message: `Unknown location "${p.to}"` });
-      if (p.from === p.to) ctx.addIssue({ code: "custom", path: ["paths", i], message: "A path cannot start and end at the same location" });
+      const first = pathIds.get(p.id);
+      if (first !== undefined) ctx.addIssue({ code: "custom", path: ["paths", i, "id"], message: `Duplicate path id "${p.id}" (first used by paths.${first})` });
+      else pathIds.set(p.id, i);
+      if (!ids.has(p.from)) ctx.addIssue({ code: "custom", path: ["paths", i, "from"], message: `Unknown location "${p.from}" in path "${p.id}"` });
+      if (!ids.has(p.to)) ctx.addIssue({ code: "custom", path: ["paths", i, "to"], message: `Unknown location "${p.to}" in path "${p.id}"` });
+      if (p.from === p.to) ctx.addIssue({ code: "custom", path: ["paths", i], message: `Path "${p.id}" cannot start and end at the same location` });
     });
   });
 export type CampusConfig = z.infer<typeof CampusConfig>;

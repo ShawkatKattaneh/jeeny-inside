@@ -12,6 +12,7 @@ const SWATCH: Record<LocationType, string> = {
 export function MapLegend({ campus }: { campus: CampusConfig }) {
   const counts = new Map<LocationType, number>();
   for (const l of campus.locations) counts.set(l.type, (counts.get(l.type) ?? 0) + 1);
+  const oneWay = campus.paths.filter((p) => p.oneWay).length;
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted">
       {[...counts].map(([type, n]) => (
@@ -20,6 +21,12 @@ export function MapLegend({ campus }: { campus: CampusConfig }) {
           {LOCATION_TYPE_LABEL[type]} ({n})
         </li>
       ))}
+      {oneWay > 0 && (
+        <li className="flex items-center gap-1.5">
+          <span className="inline-block text-[10px] leading-none font-bold" aria-hidden="true">&gt;</span>
+          One-way path ({oneWay})
+        </li>
+      )}
     </ul>
   );
 }

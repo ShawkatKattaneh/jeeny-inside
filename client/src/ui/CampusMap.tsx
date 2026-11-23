@@ -1,5 +1,5 @@
 import type { CampusConfig, Location } from "../../../shared/schemas";
-import { labelSize, pathSegments } from "../lib/mapGeometry";
+import { labelSize, oneWayArrow, pathSegments } from "../lib/mapGeometry";
 
 /**
  * The campus map, drawn entirely from the campus config file (D3).
@@ -41,6 +41,15 @@ export function CampusMap({ campus, className = "" }: { campus: CampusConfig; cl
       </g>
       <g stroke="var(--color-map-path)" strokeWidth={fs * 0.22} strokeLinecap="round">
         {segments.map((s) => <line key={s.id} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} />)}
+      </g>
+      {/* Direction arrows on one-way paths, so the map does not suggest a two-way road. */}
+      <g fill="none" stroke="var(--color-muted)" strokeWidth={fs * 0.22} strokeLinecap="round" strokeLinejoin="round">
+        {segments
+          .filter((s) => s.oneWay)
+          .map((s) => {
+            const d = oneWayArrow(s, fs * 0.9);
+            return d ? <path key={`ow-${s.id}`} d={d} /> : null;
+          })}
       </g>
 
       {campus.locations.map((l) => <Marker key={l.id} loc={l} fs={fs} />)}

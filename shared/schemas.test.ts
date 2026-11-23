@@ -41,6 +41,76 @@ describe("campus config files", () => {
   });
 });
 
+describe("campus structural validation", () => {
+  const issues = (c: unknown) => {
+    const r = CampusConfig.safeParse(c);
+    return r.success ? [] : r.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
+  };
+
+  it("rejects duplicate path ids and names the first use", () => {
+    const c = load("fictional-campus.json");
+    c.paths.push({ ...c.paths[0], from: "library", to: "admin" });
+    expect(issues(c)).toContain(`paths.${c.paths.length - 1}.id: Duplicate path id "north-gate--admin" (first used by paths.0)`);
+  });
+
+  it("duplicate location ids name the first use", () => {
+    const c = load("fictional-campus.json");
+    c.locations.push({ ...c.locations[2] });
+    expect(issues(c)).toContain(`locations.${c.locations.length - 1}.id: Duplicate location id "admin" (first used by locations.2)`);
+  });
+
+  it("names the path that references an unknown location, on either end", () => {
+    const c = load("demo-valley.json");
+    c.paths.push({ id: "ghost", from: "nowhere", to: "hall-a", lengthMeters: 10, speedKmh: 10 });
+    expect(issues(c)).toEqual([`paths.${c.paths.length - 1}.from: Unknown location "nowhere" in path "ghost"`]);
+  });
+
+  it("rejects a path that starts and ends at the same location", () => {
+    const c = load("demo-valley.json");
+    c.paths.push({ id: "loop", from: "hall-a", to: "hall-a", lengthMeters: 10, speedKmh: 10 });
+    expect(issues(c)).toEqual([`paths.${c.paths.length - 1}: Path "loop" cannot start and end at the same location`]);
+  });
+
+  it.each([0, -5, Number.POSITIVE_INFINITY, Number.NaN, "100"])("rejects path length %s", (len) => {
+    const c = load("demo-valley.json");
+    c.paths[0].lengthMeters = len;
+    expect(issues(c).length).toBeGreaterThan(0);
+    expect(issues(c)[0]).toMatch(/^paths\.0\.lengthMeters: /);
+  });
+
+  it("explains invalid lengths and speed limits in plain words", () => {
+    const c = load("demo-valley.json");
+    c.paths[0].lengthMeters = 0;
+    c.paths[1].speedKmh = 0;
+    c.paths[2].speedKmh = 55;
+    expect(issues(c)).toEqual([
+      "paths.0.lengthMeters: Path length must be greater than 0 meters",
+      "paths.1.speedKmh: Speed limit must be greater than 0 km/h",
+      "paths.2.speedKmh: Speed limit must be 40 km/h or less",
+    ]);
+  });
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])("rejects speed limit %s", (v) => {
+    const c = load("demo-valley.json");
+    c.paths[0].speedKmh = v;
+    expect(issues(c)[0]).toMatch(/^paths\.0\.speedKmh: /);
+  });
+
+  it("reports every problem at once, not just the first", () => {
+    const c = load("demo-valley.json");
+    c.paths[0].lengthMeters = -1;
+    c.paths[1].to = "missing";
+    c.locations.push({ ...c.locations[0] });
+    expect(issues(c)).toHaveLength(3);
+  });
+
+  it("paths without oneWay default to two-way", () => {
+    const c = load("demo-valley.json");
+    delete c.paths[0].oneWay;
+    expect(CampusConfig.parse(c).paths[0]!.oneWay).toBe(false);
+  });
+});
+
 describe("domain schemas", () => {
   it("demo personas cover every role and drivers have carts", () => {
     expect(new Set(PERSONAS.map((p) => p.role))).toEqual(new Set(["student", "driver", "operator"]));

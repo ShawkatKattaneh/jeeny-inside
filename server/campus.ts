@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { CampusConfig } from "../shared/schemas.js";
-import { buildGraph, unreachableLocations } from "../engine/campusGraph.js";
+import { checkCampus } from "../engine/campusValidation.js";
 
 export const DEFAULT_CAMPUS_FILE = "campus/fictional-campus.json";
 
@@ -23,7 +23,11 @@ export function loadCampus(fileArg?: string): CampusConfig {
     const issues = parsed.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n");
     throw new Error(`Campus file ${fullPath} is invalid:\n${issues}`);
   }
-  const cut = unreachableLocations(buildGraph(parsed.data));
-  if (cut.length) throw new Error(`Campus file ${fullPath} has locations no cart can reach: ${cut.join(", ")}`);
+  // Graph and map checks: errors stop the server, warnings are printed for someone to review.
+  const { errors, warnings } = checkCampus(parsed.data);
+  if (errors.length) {
+    throw new Error(`Campus file ${fullPath} fails connectivity checks:\n${errors.map((e) => `  - ${e}`).join("\n")}`);
+  }
+  for (const w of warnings) console.warn(`[campus] Warning (${file}): ${w}`);
   return parsed.data;
 }

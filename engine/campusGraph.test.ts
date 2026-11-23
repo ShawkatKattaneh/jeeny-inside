@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { CampusConfig, type CampusConfigInput } from "../shared/schemas";
-import { buildGraph, routeEtaSeconds, shortestRoute, unreachableLocations } from "./campusGraph";
+import { analyzeConnectivity, buildGraph, canReachTo, reachableFrom, routeEtaSeconds, shortestRoute, unreachableLocations } from "./campusGraph";
 
 const campus = CampusConfig.parse(JSON.parse(readFileSync("campus/fictional-campus.json", "utf8")));
 const graph = buildGraph(campus);
@@ -130,5 +130,78 @@ describe("routeEtaSeconds", () => {
     const s = routeEtaSeconds(graph, rr.route, 15);
     expect(s).toBeGreaterThan(60);
     expect(s).toBeLessThan(10 * 60);
+  });
+});
+
+describe("connectivity", () => {
+  const ring = (oneWay: boolean) =>
+    tiny({
+      paths: [
+        { id: "ab", from: "a", to: "b", lengthMeters: 100, speedKmh: 10, oneWay },
+        { id: "bc", from: "b", to: "c", lengthMeters: 100, speedKmh: 10, oneWay },
+        { id: "cd", from: "c", to: "d", lengthMeters: 100, speedKmh: 10, oneWay },
+        { id: "da", from: "d", to: "a", lengthMeters: 100, speedKmh: 10, oneWay },
+      ],
+    });
+
+  it("the seeded campuses are weakly and strongly connected, with no one-direction-only pairs", () => {
+    for (const f of ["campus/fictional-campus.json", "campus/demo-valley.json"]) {
+      const r = analyzeConnectivity(buildGraph(CampusConfig.parse(JSON.parse(readFileSync(f, "utf8")))));
+      expect(r, f).toMatchObject({ weaklyConnected: true, stronglyConnected: true, oneWayPathIds: [], oneDirectionOnly: [] });
+      expect(r.strongComponents).toHaveLength(1);
+    }
+  });
+
+  it("detects separate campus sections (not even weakly connected)", () => {
+    const r = analyzeConnectivity(buildGraph(tiny({ paths: [{ id: "ab", from: "a", to: "b", lengthMeters: 1, speedKmh: 10 }, { id: "cd", from: "c", to: "d", lengthMeters: 1, speedKmh: 10 }] })));
+    expect(r.weaklyConnected).toBe(false);
+    expect(r.stronglyConnected).toBe(false);
+    expect(r.weakComponents).toEqual([["a", "b"], ["c", "d"]]);
+  });
+
+  it("a one-way ring is strongly connected: every stop can still reach every other", () => {
+    const g = buildGraph(ring(true));
+    const r = analyzeConnectivity(g);
+    expect(r).toMatchObject({ weaklyConnected: true, stronglyConnected: true, oneWayPathIds: ["ab", "bc", "cd", "da"], oneDirectionOnly: [] });
+    // b -> a must go the long way round, never against a one-way path.
+    const back = shortestRoute(g, "b", "a");
+    expect(back.ok && back.route.pathIds).toEqual(["bc", "cd", "da"]);
+  });
+
+  it("a one-way dead end is weakly but not strongly connected, and names the one-direction pairs", () => {
+    // a <-> b <-> c two-way, then c -> d one-way with no way back: the M1 trap.
+    const g = buildGraph(tiny({ paths: [
+      { id: "ab", from: "a", to: "b", lengthMeters: 1, speedKmh: 10 },
+      { id: "bc", from: "b", to: "c", lengthMeters: 1, speedKmh: 10 },
+      { id: "cd", from: "c", to: "d", lengthMeters: 1, speedKmh: 10, oneWay: true },
+    ] }));
+    // The old single-start check sees nothing wrong from "a".
+    expect(unreachableLocations(g)).toEqual([]);
+    const r = analyzeConnectivity(g);
+    expect(r.weaklyConnected).toBe(true);
+    expect(r.stronglyConnected).toBe(false);
+    expect(r.strongComponents).toEqual([["a", "b", "c"], ["d"]]);
+    expect(r.oneDirectionOnly).toEqual([{ from: "a", to: "d" }, { from: "b", to: "d" }, { from: "c", to: "d" }]);
+  });
+
+  it("directional reachability: reachableFrom and canReachTo follow path directions", () => {
+    const g = buildGraph(tiny({ paths: [
+      { id: "ab", from: "a", to: "b", lengthMeters: 1, speedKmh: 10, oneWay: true },
+      { id: "bc", from: "b", to: "c", lengthMeters: 1, speedKmh: 10 },
+    ] }));
+    expect([...reachableFrom(g, "a")].sort()).toEqual(["a", "b", "c"]);
+    expect([...reachableFrom(g, "c")].sort()).toEqual(["b", "c"]);
+    expect([...canReachTo(g, "a")]).toEqual(["a"]);
+    expect([...canReachTo(g, "c")].sort()).toEqual(["a", "b", "c"]);
+    expect(shortestRoute(g, "a", "c").ok).toBe(true);
+    expect(shortestRoute(g, "c", "a").ok).toBe(false);
+    expect(reachableFrom(g, "nowhere").size).toBe(0);
+  });
+
+  it("gives the same report whatever order the file lists locations and paths in", () => {
+    const c = ring(false);
+    const a = analyzeConnectivity(buildGraph(c));
+    const b = analyzeConnectivity(buildGraph({ ...c, locations: [...c.locations].reverse(), paths: [...c.paths].reverse() }));
+    expect(b).toEqual(a);
   });
 });

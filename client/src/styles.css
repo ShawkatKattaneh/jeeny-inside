@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+/*
+ * Jeeny INSIDE design tokens v0 (Appendix B of the Foundation Plan).
+ * Jeeny-inspired, not Jeeny assets: magenta used sparingly on white, light gray surfaces,
+ * pill buttons, round icon buttons, teal only for rewards / impact.
+ * Typeface decision is deferred to the design pass; system sans until then.
+ */
+@theme {
+  --color-brand: #e4097e;
+  --color-brand-strong: #c00669;
+  --color-brand-tint: #fde8f2;
+  --color-accent: #0fa3a3; /* teal: rewards / impact only */
+  --color-accent-tint: #e0f5f5;
+  --color-dropoff: #7c3aed;
+  --color-ink: #14151a;
+  --color-muted: #6b7080;
+  --color-surface: #f4f5f7;
+  --color-line: #e6e7eb;
+  --color-map-bg: #eef0f2;
+  --color-map-path: #c9cdd3;
+  --color-map-building: #dfe2e6;
+  --color-success: #16a34a;
+  --color-danger: #dc2626;
+  --color-warning: #d97706;
+
+  --radius-tile: 1.25rem;
+  --radius-sheet: 1.75rem;
+
+  --spacing-button: 3.5rem; /* 56px primary pill */
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: #ffffff;
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}

@@ -1,0 +1,152 @@
+{
+  "id": "demo-valley",
+  "name": "Demo Valley College",
+  "fictional": true,
+  "description": "A tiny second fictional campus that proves swapping the campus file changes the map.",
+  "map": {
+    "width": 800,
+    "height": 500
+  },
+  "locations": [
+    {
+      "id": "main-gate",
+      "name": "Main Gate",
+      "shortName": "Gate",
+      "type": "gate",
+      "position": {
+        "x": 80,
+        "y": 250
+      },
+      "canStop": true
+    },
+    {
+      "id": "hall-a",
+      "name": "Hall A",
+      "shortName": "Hall A",
+      "type": "building",
+      "position": {
+        "x": 300,
+        "y": 120
+      },
+      "canStop": true,
+      "footprint": {
+        "w": 140,
+        "h": 70
+      }
+    },
+    {
+      "id": "hall-b",
+      "name": "Hall B",
+      "shortName": "Hall B",
+      "type": "building",
+      "position": {
+        "x": 300,
+        "y": 380
+      },
+      "canStop": true,
+      "footprint": {
+        "w": 140,
+        "h": 70
+      }
+    },
+    {
+      "id": "quad-stop",
+      "name": "Quad Stop",
+      "shortName": "Quad",
+      "type": "pickup",
+      "position": {
+        "x": 450,
+        "y": 250
+      },
+      "canStop": true
+    },
+    {
+      "id": "lot-1",
+      "name": "Lot 1",
+      "shortName": "Lot 1",
+      "type": "parking",
+      "position": {
+        "x": 650,
+        "y": 110
+      },
+      "canStop": true,
+      "footprint": {
+        "w": 100,
+        "h": 70
+      }
+    },
+    {
+      "id": "depot",
+      "name": "Cart Depot",
+      "shortName": "Depot",
+      "type": "depot",
+      "position": {
+        "x": 680,
+        "y": 400
+      },
+      "canStop": true,
+      "footprint": {
+        "w": 90,
+        "h": 60
+      }
+    }
+  ],
+  "paths": [
+    {
+      "id": "main-gate--hall-a",
+      "from": "main-gate",
+      "to": "hall-a",
+      "lengthMeters": 295,
+      "speedKmh": 15,
+      "oneWay": false
+    },
+    {
+      "id": "main-gate--hall-b",
+      "from": "main-gate",
+      "to": "hall-b",
+      "lengthMeters": 295,
+      "speedKmh": 15,
+      "oneWay": false
+    },
+    {
+      "id": "hall-a--quad-stop",
+      "from": "hall-a",
+      "to": "quad-stop",
+      "lengthMeters": 230,
+      "speedKmh": 12,
+      "oneWay": false
+    },
+    {
+      "id": "hall-b--quad-stop",
+      "from": "hall-b",
+      "to": "quad-stop",
+      "lengthMeters": 230,
+      "speedKmh": 12,
+      "oneWay": false
+    },
+    {
+      "id": "quad-stop--lot-1",
+      "from": "quad-stop",
+      "to": "lot-1",
+      "lengthMeters": 280,
+      "speedKmh": 15,
+      "oneWay": false
+    },
+    {
+      "id": "quad-stop--depot",
+      "from": "quad-stop",
+      "to": "depot",
+      "lengthMeters": 315,
+      "speedKmh": 15,
+      "oneWay": false
+    },
+    {
+      "id": "lot-1--depot",
+      "from": "lot-1",
+      "to": "depot",
+      "lengthMeters": 335,
+      "speedKmh": 15,
+      "oneWay": false
+    }
+  ]
+}

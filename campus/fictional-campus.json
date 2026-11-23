@@ -1,0 +1,371 @@
+{
+  "id": "wadi-cedar",
+  "name": "Wadi Cedar University",
+  "fictional": true,
+  "description": "A clearly fictional, realistic campus used until the real university is chosen. Replace this file to change campus.",
+  "map": {
+    "width": 1000,
+    "height": 700
+  },
+  "locations": [
+    {
+      "id": "north-gate",
+      "name": "North Gate",
+      "shortName": "N Gate",
+      "type": "gate",
+      "position": {
+        "x": 500,
+        "y": 40
+      },
+      "canStop": true
+    },
+    {
+      "id": "south-gate",
+      "name": "South Gate",
+      "shortName": "S Gate",
+      "type": "gate",
+      "position": {
+        "x": 500,
+        "y": 665
+      },
+      "canStop": true
+    },
+    {
+      "id": "admin",
+      "name": "Administration Building",
+      "shortName": "Admin",
+      "type": "building",
+      "position": {
+        "x": 500,
+        "y": 140
+      },
+      "canStop": true,
+      "footprint": {
+        "w": 150,
+        "h": 60
+      }
+    },
+    {
+      "id": "engineering",
+      "name": "Faculty of Engineering",
+      "shortName": "Engineering",
+      "type": "building",
+      "position": {
+        "x": 290,
+        "y": 210
+      },
+      "canStop": true,
+      "footprint": {
+        "w": 150,
+        "h": 90
+      }
+    },
+    {
+      "id": "science",
+      "name": "Faculty of Science",
+      "shortName": "Science",
+      "type": "building",
+      "position": {
+        "x": 710,
+        "y": 210
+      },
+      "canStop": true,
+      "footprint": {
+        "w": 150,
+        "h": 90
+      }
+    },
+    {
+      "id": "sports",
+      "name": "Sports Complex",
+      "shortName": "Sports",
+      "type": "building",
+      "position": {
+        "x": 140,
+        "y": 250
+      },
+      "canStop": true,
+      "footprint": {
+        "w": 110,
+        "h": 130
+      }
+    },
+    {
+      "id": "library",
+      "name": "Central Library",
+      "shortName": "Library",
+      "type": "building",
+      "position": {
+        "x": 500,
+        "y": 345
+      },
+      "canStop": true,
+      "footprint": {
+        "w": 130,
+        "h": 80
+      }
+    },
+    {
+      "id": "business",
+      "name": "School of Business",
+      "shortName": "Business",
+      "type": "building",
+      "position": {
+        "x": 290,
+        "y": 500
+      },
+      "canStop": true,
+      "footprint": {
+        "w": 140,
+        "h": 80
+      }
+    },
+    {
+      "id": "student-center",
+      "name": "Student Center",
+      "shortName": "Stu. Center",
+      "type": "building",
+      "position": {
+        "x": 700,
+        "y": 460
+      },
+      "canStop": true,
+      "footprint": {
+        "w": 140,
+        "h": 80
+      }
+    },
+    {
+      "id": "pickup-main-plaza",
+      "name": "Main Plaza Stop",
+      "shortName": "Plaza",
+      "type": "pickup",
+      "position": {
+        "x": 500,
+        "y": 240
+      },
+      "canStop": true
+    },
+    {
+      "id": "pickup-library-lawn",
+      "name": "Library Lawn Stop",
+      "shortName": "Lawn",
+      "type": "pickup",
+      "position": {
+        "x": 380,
+        "y": 420
+      },
+      "canStop": true
+    },
+    {
+      "id": "pickup-south-walk",
+      "name": "South Walk Stop",
+      "shortName": "S Walk",
+      "type": "pickup",
+      "position": {
+        "x": 500,
+        "y": 560
+      },
+      "canStop": true
+    },
+    {
+      "id": "parking-west",
+      "name": "West Parking (P1)",
+      "shortName": "P1",
+      "type": "parking",
+      "position": {
+        "x": 130,
+        "y": 470
+      },
+      "canStop": true,
+      "footprint": {
+        "w": 110,
+        "h": 80
+      }
+    },
+    {
+      "id": "parking-east",
+      "name": "East Parking (P2)",
+      "shortName": "P2",
+      "type": "parking",
+      "position": {
+        "x": 870,
+        "y": 330
+      },
+      "canStop": true,
+      "footprint": {
+        "w": 100,
+        "h": 90
+      }
+    },
+    {
+      "id": "depot",
+      "name": "Cart Depot",
+      "shortName": "Depot",
+      "type": "depot",
+      "position": {
+        "x": 870,
+        "y": 590
+      },
+      "canStop": true,
+      "footprint": {
+        "w": 90,
+        "h": 60
+      }
+    }
+  ],
+  "paths": [
+    {
+      "id": "north-gate--admin",
+      "from": "north-gate",
+      "to": "admin",
+      "lengthMeters": 115,
+      "speedKmh": 15,
+      "oneWay": false
+    },
+    {
+      "id": "admin--pickup-main-plaza",
+      "from": "admin",
+      "to": "pickup-main-plaza",
+      "lengthMeters": 115,
+      "speedKmh": 12,
+      "oneWay": false
+    },
+    {
+      "id": "pickup-main-plaza--engineering",
+      "from": "pickup-main-plaza",
+      "to": "engineering",
+      "lengthMeters": 245,
+      "speedKmh": 12,
+      "oneWay": false
+    },
+    {
+      "id": "pickup-main-plaza--science",
+      "from": "pickup-main-plaza",
+      "to": "science",
+      "lengthMeters": 245,
+      "speedKmh": 12,
+      "oneWay": false
+    },
+    {
+      "id": "pickup-main-plaza--library",
+      "from": "pickup-main-plaza",
+      "to": "library",
+      "lengthMeters": 120,
+      "speedKmh": 12,
+      "oneWay": false
+    },
+    {
+      "id": "engineering--sports",
+      "from": "engineering",
+      "to": "sports",
+      "lengthMeters": 180,
+      "speedKmh": 12,
+      "oneWay": false
+    },
+    {
+      "id": "sports--parking-west",
+      "from": "sports",
+      "to": "parking-west",
+      "lengthMeters": 255,
+      "speedKmh": 15,
+      "oneWay": false
+    },
+    {
+      "id": "parking-west--business",
+      "from": "parking-west",
+      "to": "business",
+      "lengthMeters": 185,
+      "speedKmh": 15,
+      "oneWay": false
+    },
+    {
+      "id": "library--pickup-library-lawn",
+      "from": "library",
+      "to": "pickup-library-lawn",
+      "lengthMeters": 165,
+      "speedKmh": 10,
+      "oneWay": false
+    },
+    {
+      "id": "pickup-library-lawn--business",
+      "from": "pickup-library-lawn",
+      "to": "business",
+      "lengthMeters": 140,
+      "speedKmh": 10,
+      "oneWay": false
+    },
+    {
+      "id": "library--student-center",
+      "from": "library",
+      "to": "student-center",
+      "lengthMeters": 265,
+      "speedKmh": 12,
+      "oneWay": false
+    },
+    {
+      "id": "science--parking-east",
+      "from": "science",
+      "to": "parking-east",
+      "lengthMeters": 230,
+      "speedKmh": 15,
+      "oneWay": false
+    },
+    {
+      "id": "parking-east--student-center",
+      "from": "parking-east",
+      "to": "student-center",
+      "lengthMeters": 245,
+      "speedKmh": 15,
+      "oneWay": false
+    },
+    {
+      "id": "student-center--depot",
+      "from": "student-center",
+      "to": "depot",
+      "lengthMeters": 245,
+      "speedKmh": 15,
+      "oneWay": false
+    },
+    {
+      "id": "pickup-south-walk--south-gate",
+      "from": "pickup-south-walk",
+      "to": "south-gate",
+      "lengthMeters": 120,
+      "speedKmh": 15,
+      "oneWay": false
+    },
+    {
+      "id": "pickup-south-walk--business",
+      "from": "pickup-south-walk",
+      "to": "business",
+      "lengthMeters": 250,
+      "speedKmh": 12,
+      "oneWay": false
+    },
+    {
+      "id": "pickup-south-walk--student-center",
+      "from": "pickup-south-walk",
+      "to": "student-center",
+      "lengthMeters": 255,
+      "speedKmh": 12,
+      "oneWay": false
+    },
+    {
+      "id": "library--pickup-south-walk",
+      "from": "library",
+      "to": "pickup-south-walk",
+      "lengthMeters": 245,
+      "speedKmh": 12,
+      "oneWay": false
+    },
+    {
+      "id": "depot--south-gate",
+      "from": "depot",
+      "to": "south-gate",
+      "lengthMeters": 435,
+      "speedKmh": 15,
+      "oneWay": false
+    }
+  ]
+}

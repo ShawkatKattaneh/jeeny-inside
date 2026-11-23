@@ -1,5 +1,7 @@
 /** Shared test fixtures for the ride engine tests (not used by app code). */
+import { readFileSync } from "node:fs";
 import { CampusConfig, type CampusConfigInput, type CartInput } from "../shared/schemas";
+import { checkCampus } from "./campusValidation";
 import { createFleet } from "./fleet";
 import { createRideState, type RideResult, type RideState } from "./rides";
 
@@ -41,4 +43,32 @@ export function setup(campus: CampusConfig, carts: CartInput[]): RideState {
 export function ok<T extends object>(r: RideResult<T>): { state: RideState } & T {
   if (!r.ok) throw new Error(`${r.error.code}: ${r.error.message}`);
   return r;
+}
+
+/**
+ * Load a real campus file the same way the server does before use: schema first, then the campus
+ * checks (connectivity and map consistency errors). Throws if the campus would be refused.
+ */
+export function loadValidCampus(file: string): CampusConfig {
+  const campus = CampusConfig.parse(JSON.parse(readFileSync(file, "utf8")));
+  const { errors } = checkCampus(campus);
+  if (errors.length) throw new Error(`${file} fails campus checks: ${errors.join("; ")}`);
+  return campus;
+}
+
+/**
+ * Everything that makes up the deterministic engine state: clock, id counters, requests, trips and
+ * carts. Path progress is rounded to 1e-9 so floating-point noise from different tick sizes does
+ * not count as a difference. Object identity is not compared.
+ */
+export function snapshot(s: RideState): string {
+  const round = (n: number) => Math.round(n * 1e9) / 1e9;
+  return JSON.stringify({
+    clock: round(s.clockSeconds),
+    nextRequestNo: s.nextRequestNo,
+    nextTripNo: s.nextTripNo,
+    requests: [...s.requests.values()],
+    trips: [...s.trips.values()],
+    carts: [...s.fleet.carts.values()].map((c) => ({ ...c, position: c.position.kind === "on_path" ? { ...c.position, progress: round(c.position.progress) } : c.position })),
+  });
 }

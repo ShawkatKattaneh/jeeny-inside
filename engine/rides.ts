@@ -37,6 +37,8 @@ export type RideErrorCode =
   | "NO_ROUTE"
   | "UNKNOWN_REQUEST"
   | "UNKNOWN_CART"
+  | "INVALID_CART_UPDATE"
+  | "CART_ON_TRIP"
   | "CART_ALREADY_ASSIGNED"
   | "CART_INELIGIBLE"
   | "CART_NOT_AT_LOCATION"
@@ -67,6 +69,19 @@ const pad = (n: number) => String(n).padStart(4, "0");
 export function createRideState(campus: CampusConfig, fleet: Fleet): RideResult {
   if (fleet.campusId !== campus.id) {
     return fail("INCONSISTENT_STATE", `The fleet was built for campus "${fleet.campusId}", not "${campus.id}"`);
+  }
+  // Matching ids are not enough: every cart position must exist on the campus actually supplied.
+  const locationIds = new Set(campus.locations.map((l) => l.id));
+  const paths = new Map(campus.paths.map((p) => [p.id, p]));
+  for (const c of fleet.carts.values()) {
+    const pos = c.position;
+    if (pos.kind === "at" && !locationIds.has(pos.locationId)) {
+      return fail("INCONSISTENT_STATE", `${c.id} is at "${pos.locationId}", which is not a location on the supplied campus "${campus.id}"`);
+    }
+    if (pos.kind === "on_path") {
+      if (!paths.has(pos.pathId)) return fail("INCONSISTENT_STATE", `${c.id} is on path "${pos.pathId}", which is not a path on the supplied campus "${campus.id}"`);
+      if (!(Number.isFinite(pos.progress) && pos.progress >= 0 && pos.progress <= 1)) return fail("INCONSISTENT_STATE", `${c.id} has invalid progress ${pos.progress} on path "${pos.pathId}"`);
+    }
   }
   const state: RideState = Object.freeze({
     campus, graph: buildGraph(campus), fleet,
@@ -110,7 +125,12 @@ export function makeTrip(t: unknown): Readonly<Trip> {
   return freezeTrip(Trip.parse(t));
 }
 
-/** Build the next state from changed pieces. Unchanged maps and entities are shared, not copied. */
+/**
+ * Internal (used by simulation.ts): build the next state from changed pieces, WITHOUT any checks.
+ * Unchanged maps and entities are shared, not copied. Outside the engine, change state only through
+ * the operations in this file (including updateCartInRide), which all run the ride invariants.
+ * Note: freezing is shallow; leg arrays and the Maps are protected by read-only types, not at runtime.
+ */
 export function withChanges(
   state: RideState,
   changes: { fleet?: Fleet; requests?: Readonly<RideRequest>[]; trips?: Readonly<Trip>[]; clockSeconds?: number; nextRequestNo?: number; nextTripNo?: number },
@@ -347,6 +367,29 @@ export function cancel(state: RideState, requestId: string): RideResult<{ trip: 
   return finish(withChanges(state, { requests: [updated], trips: [cancelling] }), { trip: cancelling });
 }
 
+/**
+ * Update one cart inside a ride state, through the fleet store, keeping every ride rule.
+ * - A cart on an open trip (planned, active or cancelling) may only have battery, range or driver
+ *   changed: its position, status and passengers belong to the ride operations and the simulation.
+ * - A free cart may change any operational field the fleet store allows, as long as the result is a
+ *   valid ride state (for example it cannot become assigned or occupied, or sit on a path, without a trip).
+ * On any failure the original state is returned unchanged.
+ */
+export function updateCartInRide(state: RideState, cartId: string, patch: unknown): RideResult<{ cart: Readonly<Cart> }> {
+  const found = getCart(state.fleet, cartId);
+  if (!found.ok) return fail("UNKNOWN_CART", found.error.message);
+  const open = openTripForCart(state, cartId);
+  if (open && patch && typeof patch === "object") {
+    const ridesOwn = ["position", "status", "passengerCount"].filter((k) => k in patch);
+    if (ridesOwn.length) {
+      return fail("CART_ON_TRIP", `${cartId} is on trip ${open.id} (${open.status}); ${ridesOwn.join(", ")} can only change through the ride operations and the simulation`);
+    }
+  }
+  const r = updateCart(state.fleet, cartId, patch);
+  if (!r.ok) return fail(r.error.code === "UNKNOWN_CART" ? "UNKNOWN_CART" : "INVALID_CART_UPDATE", r.error.message);
+  return finish(withChanges(state, { fleet: r.fleet }), { cart: r.cart });
+}
+
 // ---------- ETA ----------
 
 /**
@@ -478,6 +521,13 @@ export function checkRideInvariants(state: RideState): string[] {
 
   for (const r of state.requests.values()) {
     const t = tripByRequest.get(r.id);
+    if (t) {
+      const [pickup, dest] = t.stops;
+      if (pickup?.locationId !== r.pickupId) problems.push(`${t.id} pickup "${pickup?.locationId}" does not match ${r.id} pickup "${r.pickupId}"`);
+      if (dest?.locationId !== r.destinationId) problems.push(`${t.id} destination "${dest?.locationId}" does not match ${r.id} destination "${r.destinationId}"`);
+      if (!pickup?.board.includes(r.id)) problems.push(`${t.id} does not board ${r.id} at its pickup`);
+      if (!dest?.alight.includes(r.id)) problems.push(`${t.id} does not drop off ${r.id} at its destination`);
+    }
     const boarded = t?.passengers.find((p) => p.requestId === r.id)?.boarded;
     const expect = (ok: boolean, what: string) => { if (!ok) problems.push(`${r.id} is ${r.status} but ${what}`); };
     switch (r.status) {

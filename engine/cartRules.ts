@@ -5,12 +5,15 @@
 import { Cart, type CartStatus } from "../shared/schemas.js";
 import { SETTINGS } from "../shared/settings.js";
 
-/** States in which a cart is in service. Charging, offline and maintenance carts are never available. */
+/** States in which a cart can take more passengers. Assigned, charging, offline and maintenance carts never can. */
 export const IN_SERVICE_STATUSES: readonly CartStatus[] = ["idle", "occupied"];
 
 /**
  * Status transitions. The rule is short on purpose:
- * - A cart becomes occupied only from idle (charging, offline or maintenance carts take no passengers).
+ * - A cart becomes assigned only from idle, and leaves assigned only to occupied (boarding) or idle
+ *   (trip cancelled). Cancel its trip before charging, offline or maintenance.
+ * - A cart becomes occupied only from idle or assigned (charging, offline or maintenance carts take
+ *   no passengers).
  * - An occupied cart can only become idle, once everyone is off. Going to charging, offline or
  *   maintenance with passengers on board would strand them.
  * - Idle, charging, offline and maintenance can change freely between each other: these are operator
@@ -19,15 +22,19 @@ export const IN_SERVICE_STATUSES: readonly CartStatus[] = ["idle", "occupied"];
  */
 export function canTransition(from: CartStatus, to: CartStatus): boolean {
   if (from === to) return true;
-  if (to === "occupied") return from === "idle";
+  if (to === "occupied") return from === "idle" || from === "assigned";
+  if (to === "assigned") return from === "idle";
   if (from === "occupied") return to === "idle";
+  if (from === "assigned") return to === "idle";
   return true;
 }
 
 /** Why a transition is refused, in plain words, or null when it is allowed. */
 export function transitionError(from: CartStatus, to: CartStatus): string | null {
   if (canTransition(from, to)) return null;
-  if (to === "occupied") return `A cart can take passengers only when it is idle, not "${from}"`;
+  if (to === "occupied") return `A cart can take passengers only when it is idle or assigned, not "${from}"`;
+  if (to === "assigned") return `A cart can be assigned only when it is idle, not "${from}"`;
+  if (from === "assigned") return `An assigned cart must have its trip cancelled (become idle) before going "${to}"`;
   return `An occupied cart must drop off its passengers (become idle) before going "${to}"`;
 }
 

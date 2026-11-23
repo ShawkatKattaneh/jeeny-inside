@@ -169,3 +169,24 @@ describe("cart schema", () => {
   });
 });
 
+describe("ride and trip schema (Part 3)", () => {
+  const trip = { id: "t1", cartId: "CART-01", stops: [{ locationId: "library", board: ["r1"], alight: [] }], passengers: [{ requestId: "r1", boarded: false }], status: "planned" };
+
+  it("a trip defaults to stopIndex 0 and no leg", () => {
+    expect(Trip.parse(trip)).toMatchObject({ stopIndex: 0, leg: null });
+  });
+
+  it("accepts the cancelling status and a leg in shortestRoute's shape", () => {
+    expect(Trip.safeParse({ ...trip, status: "cancelling", leg: { locationIds: ["a", "b"], pathIds: ["ab"] } }).success).toBe(true);
+    expect(Trip.safeParse({ ...trip, status: "paused" }).success).toBe(false);
+    expect(Trip.safeParse({ ...trip, stopIndex: -1 }).success).toBe(false);
+    expect(Trip.safeParse({ ...trip, leg: { locationIds: [], pathIds: [] } }).success).toBe(false);
+  });
+
+  it("an assigned cart carries no passengers", () => {
+    const base = { id: "CART-03", label: "Cart 03", seats: 4, simulated: true, position: { kind: "at", locationId: "depot" }, batteryPercent: 60, rangeKm: 20, driverId: null };
+    expect(Cart.safeParse({ ...base, status: "assigned" }).success).toBe(true);
+    expect(Cart.safeParse({ ...base, status: "assigned", passengerCount: 1 }).success).toBe(false);
+  });
+});
+

@@ -161,7 +161,7 @@ describe("updateCart", () => {
     const charging = updateCart(base, "CART-01", { status: "charging" });
     if (!charging.ok) throw new Error("setup");
     const r = updateCart(charging.fleet, "CART-01", { status: "occupied", passengerCount: 1 });
-    expect(r).toMatchObject({ ok: false, error: { code: "INVALID_TRANSITION", message: 'CART-01: A cart can take passengers only when it is idle, not "charging"' } });
+    expect(r).toMatchObject({ ok: false, error: { code: "INVALID_TRANSITION", message: 'CART-01: A cart can take passengers only when it is idle or assigned, not "charging"' } });
   });
 
   it("the same updates always give the same result", () => {

@@ -10,8 +10,8 @@ const cart = (over: Partial<CartInput> = {}): CartInput => ({
 });
 
 describe("cart states", () => {
-  it("defines exactly the five states", () => {
-    expect(CartStatus.options).toEqual(["idle", "occupied", "charging", "offline", "maintenance"]);
+  it("defines exactly the six states (assigned added in Part 3, D1)", () => {
+    expect(CartStatus.options).toEqual(["idle", "assigned", "occupied", "charging", "offline", "maintenance"]);
     expect(IN_SERVICE_STATUSES).toEqual(["idle", "occupied"]);
   });
 
@@ -21,14 +21,15 @@ describe("cart states", () => {
 
   const all = CartStatus.options;
   const allowed = new Set([
-    "idle>occupied", "idle>charging", "idle>offline", "idle>maintenance",
+    "idle>assigned", "idle>occupied", "idle>charging", "idle>offline", "idle>maintenance",
+    "assigned>idle", "assigned>occupied",
     "occupied>idle",
     "charging>idle", "charging>offline", "charging>maintenance",
     "offline>idle", "offline>charging", "offline>maintenance",
     "maintenance>idle", "maintenance>charging", "maintenance>offline",
   ]);
 
-  it("allows exactly the documented transitions (full 5x5 table)", () => {
+  it("allows exactly the documented transitions (full 6x6 table)", () => {
     for (const from of all) for (const to of all) {
       const expected = from === to || allowed.has(`${from}>${to}`);
       expect(canTransition(from, to), `${from} -> ${to}`).toBe(expected);
@@ -37,7 +38,9 @@ describe("cart states", () => {
   });
 
   it("explains rejected transitions", () => {
-    expect(transitionError("charging", "occupied")).toBe('A cart can take passengers only when it is idle, not "charging"');
+    expect(transitionError("charging", "occupied")).toBe('A cart can take passengers only when it is idle or assigned, not "charging"');
+    expect(transitionError("charging", "assigned")).toBe('A cart can be assigned only when it is idle, not "charging"');
+    expect(transitionError("assigned", "maintenance")).toBe('An assigned cart must have its trip cancelled (become idle) before going "maintenance"');
     expect(transitionError("occupied", "maintenance")).toBe('An occupied cart must drop off its passengers (become idle) before going "maintenance"');
   });
 });

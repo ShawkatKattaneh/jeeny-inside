@@ -82,15 +82,16 @@ export type CampusConfigInput = z.input<typeof CampusConfig>;
 export const CartId = z.string().regex(/^CART-\d{2}$/, "Cart ids look like CART-07");
 
 /**
- * Cart operational states (Phase 1 Part 2). Ride-driven states such as driving to a pickup
- * belong to the ride lifecycle and are not modelled yet.
+ * Cart operational states (Phase 1 Part 2, plus "assigned" from Part 3).
  * - idle:        in service, no passengers on board, not committed to anything else.
+ * - assigned:    reserved for one trip with no passengers on board yet; may be driving to the pickup,
+ *                or finishing its current path after a cancellation. Not available for other rides.
  * - occupied:    in service with at least one passenger on board.
  * - charging:    charging, or set aside to charge. Not available for rides.
  * - offline:     out of service (for example no driver). Not available.
  * - maintenance: out of service for repair or inspection. Not available.
  */
-export const CartStatus = z.enum(["idle", "occupied", "charging", "offline", "maintenance"]);
+export const CartStatus = z.enum(["idle", "assigned", "occupied", "charging", "offline", "maintenance"]);
 export type CartStatus = z.infer<typeof CartStatus>;
 
 /**
@@ -99,6 +100,11 @@ export type CartStatus = z.infer<typeof CartStatus>;
  */
 export const DEFAULT_CART_SPEED_KMH = 15;
 
+/**
+ * Where a cart is: at a location, or on a path. `progress` is the fraction of the path's length
+ * measured from `path.from` towards `path.to` (0 = at `from`, 1 = at `to`), whichever way the cart
+ * is driving; a cart driving a two-way path in reverse has decreasing progress.
+ */
 export const CartPosition = z.union([
   z.object({ kind: z.literal("at"), locationId: LocationId }),
   z.object({ kind: z.literal("on_path"), pathId: PathId, progress: z.number().min(0).max(1) }),
@@ -167,6 +173,15 @@ export type CartStatePatch = z.infer<typeof CartStatePatch>;
 
 // ---------- Rides (shapes only) ----------
 
+/**
+ * The rider's view of a ride (Part 3, solo rides).
+ * - requested: created and validated, no cart yet.
+ * - assigned:  a cart was assigned by id; its trip is planned and has not started.
+ * - arriving:  the trip started; the cart is driving to the pickup, or waiting there to board.
+ * - on_board:  the passenger boarded; the cart is driving to the destination, or waiting there.
+ * - completed: the passenger was dropped off.
+ * - cancelled: cancelled before boarding.
+ */
 export const RideRequestStatus = z.enum([
   "requested",
   "assigned",
@@ -201,13 +216,37 @@ export const TripStop = z.object({
   alight: z.array(z.string()),
 });
 
+/** A route on the campus graph, in the same shape `shortestRoute` returns (minus its length). */
+export const TripLeg = z.object({
+  /** Location ids from the leg's start to its end, inclusive. */
+  locationIds: z.array(LocationId).min(1),
+  /** Path ids driven, in order; always one fewer than locationIds. */
+  pathIds: z.array(PathId),
+});
+export type TripLeg = z.infer<typeof TripLeg>;
+
+/**
+ * Trip statuses: planned (cart assigned, not started), active (driving or waiting at a stop),
+ * cancelling (ride cancelled while the cart was mid-path; the cart only finishes that one path),
+ * completed, cancelled.
+ */
+export const TripStatus = z.enum(["planned", "active", "cancelling", "completed", "cancelled"]);
+export type TripStatus = z.infer<typeof TripStatus>;
+
 export const Trip = z.object({
   id: z.string().min(1),
   cartId: CartId,
   stops: z.array(TripStop),
   /** The passenger list: which requests ride this trip and whether they have boarded. */
   passengers: z.array(z.object({ requestId: z.string().min(1), boarded: z.boolean() })),
-  status: z.enum(["planned", "active", "completed", "cancelled"]),
+  status: TripStatus,
+  /** Index in `stops` of the next stop to handle. Equals stops.length once every stop is done. */
+  stopIndex: z.number().int().min(0).default(0),
+  /**
+   * The route being driven now. Active: ends at stops[stopIndex]. Cancelling: exactly the one path
+   * the cart is finishing. Null when planned, completed or cancelled.
+   */
+  leg: TripLeg.nullable().default(null),
 });
 export type Trip = z.infer<typeof Trip>;
 

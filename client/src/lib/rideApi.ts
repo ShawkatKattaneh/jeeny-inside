@@ -1,18 +1,39 @@
 /**
- * The Student App's and Driver Mode's calls to the existing ride-request REST API (Phase 2). Request bodies use the
+ * The Student App's, Driver Mode's and Operations Dashboard's calls to the existing ride-request REST API (Phase 2). Request bodies use the
  * shared CreateRideRequestBody shape (studentId, pickupId, destinationId only: the server creates ids,
  * status, fare and timestamps). Successful responses are checked with the shared schemas; errors keep
  * the API's { error, code } body so the UI can show the server's own explanation.
  */
 import { z } from "zod";
-import { Cart, RideRequest, Trip, type CreateRideRequestBody } from "../../../shared/schemas";
+import { Cart, RideRequest, Trip, type AdvanceSimulationBody, type CreateRideRequestBody } from "../../../shared/schemas";
+
+/**
+ * The server's dispatch explanation (engine/dispatch.ts DispatchSelection), sent on a successful
+ * dispatch and with 409 NO_CART_AVAILABLE. Checked here on the client; the server's shape is not changed.
+ */
+export const DispatchSelection = z.object({
+  policy: z.string(),
+  selectedCartId: z.string().nullable(),
+  candidates: z.array(
+    z.object({
+      cartId: z.string(),
+      eligible: z.boolean(),
+      excludedCode: z.string().optional(),
+      excludedReason: z.string().optional(),
+      pickupEtaSeconds: z.number().optional(),
+      pickupDistanceMeters: z.number().optional(),
+      rank: z.number().optional(),
+    }),
+  ),
+});
+export type DispatchSelection = z.infer<typeof DispatchSelection>;
 
 export type ApiResult<T> =
   | { ok: true; value: T }
-  /** status is null when the server could not be reached at all. */
-  | { ok: false; status: number | null; code: string; message: string };
+  /** status is null when the server could not be reached at all. `selection` only on 409 NO_CART_AVAILABLE. */
+  | { ok: false; status: number | null; code: string; message: string; selection?: DispatchSelection };
 
-const ErrorBody = z.object({ error: z.string(), code: z.string() });
+const ErrorBody = z.object({ error: z.string(), code: z.string(), selection: DispatchSelection.optional() });
 const CancelResponse = z.object({ request: RideRequest });
 /** Body of a successful start / board / drop-off call: the request, its trip and that trip's cart after the operation. */
 const LifecycleResponse = z.object({ request: RideRequest, trip: Trip, cart: Cart });
@@ -26,6 +47,19 @@ export interface RideApi {
   createRideRequest(body: CreateRideRequestBody): Promise<ApiResult<RideRequest>>;
   /** POST /api/ride-requests/:id/cancel: cancel before boarding; answers with the updated request. */
   cancelRide(requestId: string): Promise<ApiResult<RideRequest>>;
+}
+
+const DispatchResponse = z.object({ request: RideRequest, trip: Trip, cart: Cart, selection: DispatchSelection });
+export type DispatchResult = z.infer<typeof DispatchResponse>;
+const AdvanceResponse = z.object({ clockSeconds: z.number().min(0), carts: z.array(Cart), trips: z.array(Trip) });
+export type AdvanceResult = z.infer<typeof AdvanceResponse>;
+
+/** Operations Dashboard's calls (Phase 3 Prompt 3): the two operator controls the server has. */
+export interface OpsApi {
+  /** POST /api/ride-requests/:id/dispatch (no body fields): the server picks and assigns a cart, or explains why none. */
+  dispatch(requestId: string): Promise<ApiResult<DispatchResult>>;
+  /** POST /api/simulation/advance { seconds }: moves simulated time for every moving trip. */
+  advance(body: AdvanceSimulationBody): Promise<ApiResult<AdvanceResult>>;
 }
 
 /** Driver Mode's calls (Phase 3 Prompt 2). Separate from RideApi so the Student App's API is unchanged. */
@@ -52,7 +86,7 @@ async function call<T>(fetchImpl: typeof fetch, url: string, body: unknown, pars
   if (!res.ok) {
     const err = ErrorBody.safeParse(json);
     return err.success
-      ? { ok: false, status: res.status, code: err.data.code, message: err.data.error }
+      ? { ok: false, status: res.status, code: err.data.code, message: err.data.error, ...(err.data.selection ? { selection: err.data.selection } : {}) }
       : { ok: false, status: res.status, code: "UNEXPECTED_RESPONSE", message: `The server answered ${res.status}.` };
   }
   try {
@@ -75,5 +109,13 @@ export function createDriverApi(baseUrl = "", fetchImpl: typeof fetch = (...args
   return {
     rideAction: (requestId, action) =>
       call(fetchImpl, `${baseUrl}/api/ride-requests/${encodeURIComponent(requestId)}/${action}`, {}, (v) => LifecycleResponse.parse(v)),
+  };
+}
+
+export function createOpsApi(baseUrl = "", fetchImpl: typeof fetch = (...args) => fetch(...args)): OpsApi {
+  return {
+    dispatch: (requestId) =>
+      call(fetchImpl, `${baseUrl}/api/ride-requests/${encodeURIComponent(requestId)}/dispatch`, {}, (v) => DispatchResponse.parse(v)),
+    advance: (body) => call(fetchImpl, `${baseUrl}/api/simulation/advance`, body, (v) => AdvanceResponse.parse(v)),
   };
 }

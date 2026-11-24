@@ -9,6 +9,8 @@ export interface CampusMapOverlay {
   routePathIds?: readonly string[];
   /** A cart to draw at the position the server reports (map units, not GPS). */
   cart?: { label: string; point: Point } | null;
+  /** Several carts (Operations Dashboard), each at its server-reported position; `highlight` rings one. */
+  carts?: readonly { id: string; label: string; point: Point; highlight?: boolean }[];
 }
 
 /**
@@ -78,6 +80,16 @@ export function CampusMap({ campus, className = "", overlay }: { campus: CampusC
 
       {pickup && <StopRing point={pickup} fs={fs} color="var(--color-brand)" label="Pickup" />}
       {destination && <StopRing point={destination} fs={fs} color="var(--color-dropoff)" label="Drop-off" />}
+      {overlay?.carts?.map((c) => (
+        <g key={`cart-${c.id}`}>
+          <title>{`${c.label} (simulated position)`}</title>
+          {c.highlight && <circle cx={c.point.x} cy={c.point.y} r={fs * 1.45} fill="none" stroke="var(--color-brand)" strokeWidth={fs * 0.25} />}
+          <circle cx={c.point.x} cy={c.point.y} r={fs * 0.95} fill="var(--color-ink)" stroke="white" strokeWidth={fs * 0.25} />
+          <text x={c.point.x} y={c.point.y + fs * 0.32} textAnchor="middle" fontSize={fs * 0.8} fontWeight={800} fill="white">
+            {c.label.replace(/\D+/g, "").slice(-2) || "C"}
+          </text>
+        </g>
+      ))}
       {overlay?.cart && (
         <g>
           <title>{`${overlay.cart.label} (simulated position)`}</title>

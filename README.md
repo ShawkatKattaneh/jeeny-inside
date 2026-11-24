@@ -93,13 +93,13 @@ After a reconnect the server sends a fresh snapshot anyway.
 
 **Delivery is best effort.** Socket.IO does not store or replay events, so a client that was disconnected misses them and must resync from a snapshot. A committed change is never rolled back because a client didn't receive it. The REST snapshot is always the authority; socket updates are notifications.
 
-**Not included yet:** no authentication or roles (anyone who can reach the port can listen, and there are no CORS options because the demo serves the app and the socket from one origin), no persistence (a restart starts again at revision 0 from the campus and fleet files), and the Ops screen does not use the socket yet (the Student App and Driver Mode do, see below).
+**Not included yet:** no authentication or roles (anyone who can reach the port can listen, and there are no CORS options because the demo serves the app and the socket from one origin), no persistence (a restart starts again at revision 0 from the campus and fleet files), and no Ops passcode yet (the Student App, Driver Mode and the Operations Center all use the socket, see below).
 
 ### Student App (Phase 3)
 
 Pick a student persona (Lina, Omar or Sara) on the start screen. The Student App lives at `/student` (home: book or follow your ride), `/student/rides` (your rides) and `/student/rides/<request id>` (ride details).
 
-- **Booking:** pickup and destination are chosen from the campus file's stop locations (`canStop`). The app refuses an empty or identical pair, ignores repeated taps while a request is in flight, and re-checks the live state when you tap (no second active ride, same campus as the server). It sends `POST /api/ride-requests` with only `studentId`, `pickupId` and `destinationId`; ids, status, fare and timestamps come from the server. A new request stays `requested` until something dispatches it: nothing in the Student App dispatches, starts, boards or drops off. For now these are driven with the REST calls above (Driver Mode and the Operations Center come next).
+- **Booking:** pickup and destination are chosen from the campus file's stop locations (`canStop`). The app refuses an empty or identical pair, ignores repeated taps while a request is in flight, and re-checks the live state when you tap (no second active ride, same campus as the server). It sends `POST /api/ride-requests` with only `studentId`, `pickupId` and `destinationId`; ids, status, fare and timestamps come from the server. A new request stays `requested` until something dispatches it: nothing in the Student App dispatches, starts, boards or drops off. Dispatch happens in the Operations Center, and the trip steps in Driver Mode.
 - **Live tracking:** one Socket.IO connection for the Student area (`client/src/lib/realtimeStore.ts`), following the client rule above with `classifyRevision`; on a gap it asks for a snapshot over the socket and falls back to `GET /api/snapshot`. REST responses are never written into the live state, so a slow booking response cannot overwrite a newer update.
 - **Statuses shown:** Requested, Cart assigned, Cart on the way, Cart at pickup (status `arriving` and the cart is at the pickup), On board, Arrived (status `on_board` and the cart is at the destination), Completed, Cancelled. A student can cancel before boarding (`POST /api/ride-requests/:id/cancel`).
 - **Ownership:** rides are filtered by the request's `studentId`. This is presentation only, not security: there is no login, the server does not check `studentId`, and every socket receives the whole state.
@@ -114,8 +114,19 @@ Pick a driver persona (Yazan or Rana) on the start screen to open `/driver`.
 - **Your cart:** the cart whose `driverId` (from the fleet file, part of every snapshot) is the driver persona's id. The persona's own `cartId` is only compared, and a mismatch is shown as a warning; Driver Mode follows the live fleet. Battery, range, status, passengers and position are the server's values.
 - **Trips:** there is no driver-level ride assignment in the data. Trips name a cart, so Driver Mode shows the open trips (planned, active, cancelling) assigned to your cart, labelled that way. Finished trips are not listed (a cart's `driverId` is its current driver, not who drove earlier trips). The engine allows one open trip per cart; if several ever appear, the driver must pick one.
 - **Steps:** Start trip (`POST /api/ride-requests/:id/start`), Confirm boarding (`/board`, once the cart is at the pickup) and Confirm drop-off (`/drop-off`, once it is at the destination), each for the trip's own request id. The button is offered only when the server's own preconditions hold, re-checked just before sending; one step at a time, no retries, and success is shown only after the server answers. The screen itself moves only on Socket.IO updates or snapshots, never from the REST answer.
-- **Not in Driver Mode:** dispatching rides and advancing the simulation. Until the Operations Center exists, use `POST /api/ride-requests/:id/dispatch` and `POST /api/simulation/advance`. The cart does not move between those calls.
+- **Not in Driver Mode:** dispatching rides and advancing the simulation. Both are explicit buttons in the Operations Center (below). The cart does not move between advances.
 - Same single realtime connection pattern as the Student App. Filtering by driver is presentation only, not security.
+
+### Operations Center (Phase 3)
+
+Pick the operator persona (Hadi) on the start screen to open `/ops`. It is a demo operator interface: there is no sign-in or passcode, so anyone who can open the app can open it.
+
+- **Live counts** from the current snapshot only, kept separate: carts by cart status, ride requests by request status (plus "awaiting dispatch" = `requested`, and "active" = requested, assigned, arriving or on board), trips by trip status, and passengers on board over total seats. No wait times, utilization, revenue, trends or charts.
+- **Fleet, requests and trips tables** with each entity's own status, the cart's driver (`driverId`, plus the persona name on an exact match), battery, range, passengers and position. Selecting a row opens its details and highlights it on the map.
+- **Dispatch:** each `requested` ride has its own "Dispatch REQ-…" button that sends `POST /api/ride-requests/:id/dispatch`. The dashboard never decides which carts are usable (an idle cart may still be below the battery reserve or have no route); it shows the server's answer, including its explanation of every cart, or its refusal (for example `NO_CART_AVAILABLE` with each cart's reason). One dispatch at a time, no retries, nothing automatic.
+- **Simulation:** "Advance N s" sends `POST /api/simulation/advance` with `0 < N ≤ 600`, checked with the same shared schema as the server. One advance at a time. The clock shown is the server's simulation clock (from the live state), not wall-clock time; the success note quotes the clock the server returned. If the socket update has not arrived, the dashboard asks for a snapshot; it never sends a second advance.
+- **Map:** every cart at its simulated position, and for the selected ride its pickup, destination and current leg.
+- Same single realtime connection pattern as the Student App and Driver Mode; REST answers are never written into the live state.
 
 ## Structure
 
@@ -128,9 +139,10 @@ engine/      Pure TypeScript logic (no network, database or timers): campus grap
 server/      Fastify: REST endpoints, Socket.IO updates, campus and fleet loading, the one in-memory ride state, serves the built app in demo mode
 client/      React + Vite + Tailwind web app
   src/ui/      Design tokens v0 components: brand lockup, pill and icon buttons, badges, campus map
-  src/routes/  Persona picker, /student (Student App area and its routes), /driver (Driver Mode), /ops
+  src/routes/  Persona picker, /student (Student App area and its routes), /driver (Driver Mode), /ops (Operations Center)
   src/student/ Student App screens: home and booking, ride status, your rides, ride details, fares
   src/driver/  Driver Mode screens: your cart, the trip assigned to it, start / board / drop-off
+  src/ops/     Operations Center: live counts, fleet / requests / trips, dispatch and simulation controls, details, map
   src/lib/     API clients (validated with the shared schemas), realtime store, booking rules, student ride view, persona storage, map geometry
 scripts/     dev.mjs: starts the API and the Vite dev server with one command
 ```

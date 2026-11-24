@@ -11,21 +11,27 @@
  *   request can run between reading the current state and replacing it: updates cannot interleave
  *   or be lost, and no lock or queue is needed. Keep it that way: never await inside an operation.
  *
+ * The state lives in memory only: it is not saved anywhere and starts again from the campus and
+ * fleet files whenever the server process restarts.
+ *
  * Each buildApp call creates its own store, so tests get isolated instances; production startup
  * (server/index.ts) calls buildApp once, so normal operation has exactly one store.
  */
 import type { CampusConfig } from "../shared/schemas.js";
 import type { Fleet } from "../engine/fleet.js";
-import { createRideState, type RideError, type RideResult, type RideState } from "../engine/rides.js";
+import { createRideState, type RideState } from "../engine/rides.js";
 
-/** The result of a write: the operation's own extra fields (copied), never the internal state. */
-export type ApplyResult<T extends object> = ({ ok: true } & T) | { ok: false; error: RideError };
+/** What an engine operation returns: a new state plus extra fields, or an error (RideResult's shape). */
+export type OperationResult = { ok: true; state: RideState } | { ok: false; error: object };
+
+/** The result of a write: the operation's own fields (copied), with the internal state removed. */
+export type ApplyResult<R> = R extends { ok: true; state: RideState } ? Omit<R, "state"> : R;
 
 export interface AppStore {
   /** Run a read-only selector on the current state and return a deep copy of what it selects. */
   read<T>(select: (state: RideState) => T): T;
   /** Run one engine operation; the stored state is replaced only if it succeeds. */
-  apply<T extends object>(op: (state: RideState) => RideResult<T>): ApplyResult<T>;
+  apply<R extends OperationResult>(op: (state: RideState) => R): ApplyResult<R>;
 }
 
 function deepFreeze<T>(value: T): T {
@@ -51,12 +57,12 @@ export function createAppStore(campus: CampusConfig, fleet: Fleet): AppStore {
     read<T>(select: (state: RideState) => T): T {
       return structuredClone(select(current));
     },
-    apply<T extends object>(op: (state: RideState) => RideResult<T>): ApplyResult<T> {
+    apply<R extends OperationResult>(op: (state: RideState) => R): ApplyResult<R> {
       const result = op(current);
-      if (!result.ok) return { ok: false, error: { ...result.error } };
+      if (!result.ok) return { ok: false, error: structuredClone(result.error) } as ApplyResult<R>;
       current = result.state;
-      const { ok: _ok, state: _internal, ...extra } = result;
-      return { ok: true, ...structuredClone(extra) } as ApplyResult<T>;
+      const { ok: _ok, state: _internal, ...extra } = result as { ok: true; state: RideState };
+      return { ok: true, ...structuredClone(extra) } as ApplyResult<R>;
     },
   });
 }

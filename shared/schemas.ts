@@ -280,6 +280,27 @@ export const CreateRideRequestBody = z
   .strict();
 export type CreateRideRequestBody = z.infer<typeof CreateRideRequestBody>;
 
+/**
+ * Largest simulation step one call may take, in seconds. Not an approved business setting: a
+ * conservative API bound. Ten minutes is longer than any trip on the seeded campuses at cart speed,
+ * so one call can finish a leg, while a mistyped huge number cannot jump the demo far ahead.
+ */
+export const MAX_SIMULATION_STEP_SECONDS = 600;
+
+/** The only field a client may send to advance the demo simulation clock. */
+export const AdvanceSimulationBody = z
+  .object({
+    seconds: z
+      .number("seconds must be a number")
+      .positive("seconds must be greater than 0")
+      .max(MAX_SIMULATION_STEP_SECONDS, `seconds must be ${MAX_SIMULATION_STEP_SECONDS} or less`),
+  })
+  .strict();
+export type AdvanceSimulationBody = z.infer<typeof AdvanceSimulationBody>;
+
+/** Ride lifecycle actions (dispatch, start, board, drop-off, cancel) take no client fields at all. */
+export const EmptyActionBody = z.object({}).strict().optional();
+
 // ---------- Demo personas (no real login) ----------
 
 export const Role = z.enum(["student", "driver", "operator"]);

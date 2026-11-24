@@ -52,8 +52,20 @@ The server starts with the carts in `campus/fleets/<campus id>.json` (sample dat
 | POST | `/api/ride-requests` | Body `{ studentId, pickupId, destinationId }` only. 201 with the new request; any other field is refused with 400 |
 | GET | `/api/ride-requests/:requestId` | The request, or 404 |
 | GET | `/api/ride-requests/:requestId/trip` | `{ trip }`, which is `null` until a cart is assigned; 404 for an unknown request |
+| POST | `/api/ride-requests/:requestId/dispatch` | Picks and assigns a cart (policy below). 200 `{ request, trip, cart, selection }`; 409 `NO_CART_AVAILABLE` with `selection` explaining every cart, and the request stays requested |
+| POST | `/api/ride-requests/:requestId/start` | Starts the assigned trip: the cart heads for the pickup on the next advance. 200 `{ request, trip, cart }` |
+| POST | `/api/ride-requests/:requestId/board` | Boards the passenger; only once the cart is at the pickup |
+| POST | `/api/ride-requests/:requestId/drop-off` | Drops the passenger off; only once the cart is at the destination |
+| POST | `/api/ride-requests/:requestId/cancel` | Cancels before boarding. A cart caught mid-path finishes that one path first and stays unavailable until then |
+| POST | `/api/simulation/advance` | Body `{ seconds }`, more than 0 and at most 600. Moves every active trip at once. 200 `{ clockSeconds, carts, trips }` |
 
-Errors are `{ error, code }` (plus `issues` for an invalid body): 400 invalid input, 404 unknown resource, 409 not allowed in the current ride state, 500 internal (no details). Creating a request does not assign a cart; dispatch comes in a later phase. Sending the same body twice creates two requests (no idempotency yet).
+The ride actions take no body fields (an empty body or `{}`); anything else is refused with 400, so a client can never choose a cart or set a status, position or passenger count.
+
+Errors are `{ error, code }` (plus `issues` for an invalid body): 400 invalid input, 404 unknown resource, 409 not allowed in the current ride state, 500 internal (no details). Creating a request does not assign a cart; dispatch is a separate, explicit call. Sending the same body twice creates two requests (no idempotency yet).
+
+**Dispatch policy** (`engine/dispatch.ts`, deterministic, no AI): a cart is a candidate only if the engine's own `assignCart` accepts it (in service and idle, battery at or above 15%, a free seat, no open trip, parked at a location rather than on a path, routes to the pickup and the destination). Candidates are ranked by the exact, unrounded time to reach the pickup on the route the trip will drive, then by the route's length, then by cart id. One call dispatches one request; nothing is dispatched automatically.
+
+**Simulated time** moves only when `/api/simulation/advance` is called: a manual demo control, with no timers or real-time movement. Advancing never boards or drops anyone off. All ride state lives in memory and starts again from the campus and fleet files when the server restarts.
 
 ## Structure
 

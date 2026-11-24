@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "./app";
 import { loadCampus } from "./campus";
+import { loadFleet } from "./fleet";
 
 let app: FastifyInstance | undefined;
 afterEach(async () => {
@@ -14,7 +15,8 @@ afterEach(async () => {
 
 describe("server", () => {
   it("serves health, campus and personas", async () => {
-    app = await buildApp({ campus: loadCampus() });
+    const loaded = loadCampus();
+    app = await buildApp({ campus: loaded, fleet: loadFleet(loaded) });
     expect((await app.inject("/api/health")).json()).toMatchObject({ ok: true, campus: "wadi-cedar" });
     const campus = (await app.inject("/api/campus")).json();
     expect(campus.locations).toHaveLength(15);
@@ -24,7 +26,8 @@ describe("server", () => {
   });
 
   it("swapping the campus file changes the map the app receives", async () => {
-    app = await buildApp({ campus: loadCampus("campus/demo-valley.json") });
+    const loaded = loadCampus("campus/demo-valley.json");
+    app = await buildApp({ campus: loaded, fleet: loadFleet(loaded) });
     const campus = (await app.inject("/api/campus")).json();
     expect(campus.id).toBe("demo-valley");
     expect(campus.locations).toHaveLength(6);
@@ -108,7 +111,8 @@ describe("server", () => {
 
   it("the campus API response keeps its Phase 0 shape after the swap", async () => {
     for (const file of [undefined, "campus/demo-valley.json"]) {
-      app = await buildApp({ campus: loadCampus(file) });
+      const loaded = loadCampus(file);
+      app = await buildApp({ campus: loaded, fleet: loadFleet(loaded) });
       const body = (await app.inject("/api/campus")).json();
       expect(Object.keys(body).sort()).toEqual(["description", "fictional", "id", "locations", "map", "name", "paths"]);
       expect(body.paths.every((p: { oneWay: unknown }) => typeof p.oneWay === "boolean")).toBe(true);

@@ -1,0 +1,28 @@
+{
+  "campusId": "wadi-cedar",
+  "description": "Sample data: simulated starting fleet for the fictional campus. Battery and range are prototype assumptions, not measured values.",
+  "carts": [
+    {
+      "id": "CART-01",
+      "label": "Cart 01",
+      "seats": 4,
+      "simulated": true,
+      "status": "idle",
+      "position": { "kind": "at", "locationId": "depot" },
+      "batteryPercent": 100,
+      "rangeKm": 40,
+      "driverId": "drv-yazan"
+    },
+    {
+      "id": "CART-02",
+      "label": "Cart 02",
+      "seats": 4,
+      "simulated": true,
+      "status": "idle",
+      "position": { "kind": "at", "locationId": "depot" },
+      "batteryPercent": 100,
+      "rangeKm": 40,
+      "driverId": "drv-rana"
+    }
+  ]
+}

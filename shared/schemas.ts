@@ -171,6 +171,22 @@ export const CartStatePatch = z
   .strict();
 export type CartStatePatch = z.infer<typeof CartStatePatch>;
 
+/**
+ * A fleet file (campus/fleets/<campus id>.json): the carts a server starts with for one campus.
+ * Only the outer shape is checked here; each cart is validated by engine/fleet.ts createFleet,
+ * which reports every invalid cart, duplicate id and unknown position at once.
+ */
+export const FleetConfig = z
+  .object({
+    /** Must equal the id of the campus the server loaded. */
+    campusId: z.string().min(1),
+    /** Free text, for example to say the carts are sample data. */
+    description: z.string().optional(),
+    carts: z.array(z.unknown()).min(1, "A fleet file needs at least one cart"),
+  })
+  .strict();
+export type FleetConfig = z.infer<typeof FleetConfig>;
+
 // ---------- Rides (shapes only) ----------
 
 /**
@@ -249,6 +265,20 @@ export const Trip = z.object({
   leg: TripLeg.nullable().default(null),
 });
 export type Trip = z.infer<typeof Trip>;
+
+/**
+ * The only fields a client may send to create a ride request (Phase 2). Any other field (ids, cart,
+ * fare, status, timestamps, passengers, mode, priority) is rejected, never ignored: the engine and
+ * the server create those. Location ids are checked by the engine (createRequest), not here.
+ */
+export const CreateRideRequestBody = z
+  .object({
+    studentId: z.string().min(1, "studentId is required"),
+    pickupId: z.string().min(1, "pickupId is required"),
+    destinationId: z.string().min(1, "destinationId is required"),
+  })
+  .strict();
+export type CreateRideRequestBody = z.infer<typeof CreateRideRequestBody>;
 
 // ---------- Demo personas (no real login) ----------
 

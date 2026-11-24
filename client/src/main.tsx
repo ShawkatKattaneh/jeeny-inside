@@ -14,7 +14,7 @@ createRoot(document.getElementById("root")!).render(
       <CampusProvider>
         <Routes>
           <Route path="/" element={<PersonaPicker />} />
-          <Route path="/student" element={<StudentHome />} />
+          <Route path="/student/*" element={<StudentHome />} />
           <Route path="/driver" element={<DriverHome />} />
           <Route path="/ops" element={<OpsHome />} />
           <Route path="*" element={<Navigate to="/" replace />} />

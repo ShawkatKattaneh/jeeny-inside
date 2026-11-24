@@ -4,6 +4,8 @@ import { fetchCampus } from "./api";
 import { useApi } from "./useApi";
 
 const CampusCtx = createContext<CampusConfig | null>(null);
+/** Exported so tests can supply a campus without the network. */
+export const CampusContext = CampusCtx;
 
 /** Loads the campus once for the whole app. Every screen draws from the same config. */
 export function CampusProvider({ children }: { children: ReactNode }) {

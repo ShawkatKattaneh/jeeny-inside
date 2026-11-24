@@ -93,7 +93,19 @@ After a reconnect the server sends a fresh snapshot anyway.
 
 **Delivery is best effort.** Socket.IO does not store or replay events, so a client that was disconnected misses them and must resync from a snapshot. A committed change is never rolled back because a client didn't receive it. The REST snapshot is always the authority; socket updates are notifications.
 
-**Not included yet:** no authentication or roles (anyone who can reach the port can listen, and there are no CORS options because the demo serves the app and the socket from one origin), no persistence (a restart starts again at revision 0 from the campus and fleet files), and no Student, Driver or Ops screens use the socket yet.
+**Not included yet:** no authentication or roles (anyone who can reach the port can listen, and there are no CORS options because the demo serves the app and the socket from one origin), no persistence (a restart starts again at revision 0 from the campus and fleet files), and the Driver and Ops screens do not use the socket yet (the Student App does, see below).
+
+### Student App (Phase 3)
+
+Pick a student persona (Lina, Omar or Sara) on the start screen. The Student App lives at `/student` (home: book or follow your ride), `/student/rides` (your rides) and `/student/rides/<request id>` (ride details).
+
+- **Booking:** pickup and destination are chosen from the campus file's stop locations (`canStop`). The app refuses an empty or identical pair, ignores repeated taps while a request is in flight, and re-checks the live state when you tap (no second active ride, same campus as the server). It sends `POST /api/ride-requests` with only `studentId`, `pickupId` and `destinationId`; ids, status, fare and timestamps come from the server. A new request stays `requested` until something dispatches it: nothing in the Student App dispatches, starts, boards or drops off. For now these are driven with the REST calls above (Driver Mode and the Operations Center come next).
+- **Live tracking:** one Socket.IO connection for the Student area (`client/src/lib/realtimeStore.ts`), following the client rule above with `classifyRevision`; on a gap it asks for a snapshot over the socket and falls back to `GET /api/snapshot`. REST responses are never written into the live state, so a slow booking response cannot overwrite a newer update.
+- **Statuses shown:** Requested, Cart assigned, Cart on the way, Cart at pickup (status `arriving` and the cart is at the pickup), On board, Arrived (status `on_board` and the cart is at the destination), Completed, Cancelled. A student can cancel before boarding (`POST /api/ride-requests/:id/cancel`).
+- **Ownership:** rides are filtered by the request's `studentId`. This is presentation only, not security: there is no login, the server does not check `studentId`, and every socket receives the whole state.
+- **Fares:** the fare shown on a ride is the server's `fareJod` (0.25 JOD, simulated, no payment). Loyalty (6th ride free) is explained but not tracked: the server always sets `freeLoyaltyRide: false`, so the app never claims a free ride.
+- **Map:** the campus file's schematic map, not GPS. It shows the selected stops, and for an active ride only its own cart at the server's position and the leg the server planned. No ETAs are shown (no API exposes them yet).
+- History lives in the server's memory and is cleared when the server restarts.
 
 ## Structure
 
@@ -106,8 +118,9 @@ engine/      Pure TypeScript logic (no network, database or timers): campus grap
 server/      Fastify: REST endpoints, Socket.IO updates, campus and fleet loading, the one in-memory ride state, serves the built app in demo mode
 client/      React + Vite + Tailwind web app
   src/ui/      Design tokens v0 components: brand lockup, pill and icon buttons, badges, campus map
-  src/routes/  Persona picker, /student, /driver, /ops
-  src/lib/     API client (validated with the shared schemas), persona storage, map geometry
+  src/routes/  Persona picker, /student (Student App area and its routes), /driver, /ops
+  src/student/ Student App screens: home and booking, ride status, your rides, ride details, fares
+  src/lib/     API clients (validated with the shared schemas), realtime store, booking rules, student ride view, persona storage, map geometry
 scripts/     dev.mjs: starts the API and the Vite dev server with one command
 ```
 

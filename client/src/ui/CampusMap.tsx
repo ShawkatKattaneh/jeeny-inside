@@ -1,15 +1,30 @@
-import type { CampusConfig, Location } from "../../../shared/schemas";
+import type { CampusConfig, Location, Point } from "../../../shared/schemas";
 import { labelSize, oneWayArrow, pathSegments } from "../lib/mapGeometry";
+
+export interface CampusMapOverlay {
+  /** Selected or booked pickup and destination, highlighted on the map. */
+  pickupId?: string | null;
+  destinationId?: string | null;
+  /** Path ids of a route the server planned (a trip's current leg). Never computed by the client. */
+  routePathIds?: readonly string[];
+  /** A cart to draw at the position the server reports (map units, not GPS). */
+  cart?: { label: string; point: Point } | null;
+}
 
 /**
  * The campus map, drawn entirely from the campus config file (D3).
  * Desaturated light-gray base, thin paths, the plan's marker grammar.
- * Phase 0 shows the static campus; carts and routes are drawn from Phase 2 on.
+ * The optional overlay (Student App, Phase 3) highlights a pickup, a destination, a route the server
+ * planned and one cart at its server-reported position. Without it the map is unchanged.
  */
-export function CampusMap({ campus, className = "" }: { campus: CampusConfig; className?: string }) {
+export function CampusMap({ campus, className = "", overlay }: { campus: CampusConfig; className?: string; overlay?: CampusMapOverlay }) {
   const { width, height } = campus.map;
   const fs = labelSize(campus);
   const segments = pathSegments(campus);
+  const route = new Set(overlay?.routePathIds ?? []);
+  const posOf = (id: string | null | undefined) => (id ? campus.locations.find((l) => l.id === id)?.position ?? null : null);
+  const pickup = posOf(overlay?.pickupId);
+  const destination = posOf(overlay?.destinationId);
 
   return (
     <svg
@@ -52,8 +67,51 @@ export function CampusMap({ campus, className = "" }: { campus: CampusConfig; cl
           })}
       </g>
 
+      {/* Route the server planned for the current trip leg */}
+      {route.size > 0 && (
+        <g stroke="var(--color-brand)" strokeWidth={fs * 0.45} strokeLinecap="round" opacity={0.85}>
+          {segments.filter((s) => route.has(s.id)).map((s) => <line key={`r-${s.id}`} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} />)}
+        </g>
+      )}
+
       {campus.locations.map((l) => <Marker key={l.id} loc={l} fs={fs} />)}
+
+      {pickup && <StopRing point={pickup} fs={fs} color="var(--color-brand)" label="Pickup" />}
+      {destination && <StopRing point={destination} fs={fs} color="var(--color-dropoff)" label="Drop-off" />}
+      {overlay?.cart && (
+        <g>
+          <title>{`${overlay.cart.label} (simulated position)`}</title>
+          <circle cx={overlay.cart.point.x} cy={overlay.cart.point.y} r={fs * 0.95} fill="var(--color-ink)" stroke="white" strokeWidth={fs * 0.25} />
+          <path
+            d={`M${overlay.cart.point.x - fs * 0.45} ${overlay.cart.point.y + fs * 0.15} h${fs * 0.9} M${overlay.cart.point.x - fs * 0.3} ${overlay.cart.point.y - fs * 0.25} h${fs * 0.6}`}
+            stroke="white"
+            strokeWidth={fs * 0.18}
+            strokeLinecap="round"
+          />
+        </g>
+      )}
     </svg>
+  );
+}
+
+function StopRing({ point, fs, color, label }: { point: Point; fs: number; color: string; label: string }) {
+  return (
+    <g>
+      <circle cx={point.x} cy={point.y} r={fs * 1.25} fill="none" stroke={color} strokeWidth={fs * 0.3} />
+      <text
+        x={point.x}
+        y={point.y - fs * 1.7}
+        textAnchor="middle"
+        fontSize={fs * 0.85}
+        fontWeight={800}
+        fill={color}
+        paintOrder="stroke"
+        stroke="white"
+        strokeWidth={fs * 0.3}
+      >
+        {label}
+      </text>
+    </g>
   );
 }
 

@@ -93,7 +93,7 @@ After a reconnect the server sends a fresh snapshot anyway.
 
 **Delivery is best effort.** Socket.IO does not store or replay events, so a client that was disconnected misses them and must resync from a snapshot. A committed change is never rolled back because a client didn't receive it. The REST snapshot is always the authority; socket updates are notifications.
 
-**Not included yet:** no authentication or roles (anyone who can reach the port can listen, and there are no CORS options because the demo serves the app and the socket from one origin), no persistence (a restart starts again at revision 0 from the campus and fleet files), and the Driver and Ops screens do not use the socket yet (the Student App does, see below).
+**Not included yet:** no authentication or roles (anyone who can reach the port can listen, and there are no CORS options because the demo serves the app and the socket from one origin), no persistence (a restart starts again at revision 0 from the campus and fleet files), and the Ops screen does not use the socket yet (the Student App and Driver Mode do, see below).
 
 ### Student App (Phase 3)
 
@@ -107,6 +107,16 @@ Pick a student persona (Lina, Omar or Sara) on the start screen. The Student App
 - **Map:** the campus file's schematic map, not GPS. It shows the selected stops, and for an active ride only its own cart at the server's position and the leg the server planned. No ETAs are shown (no API exposes them yet).
 - History lives in the server's memory and is cleared when the server restarts.
 
+### Driver Mode (Phase 3)
+
+Pick a driver persona (Yazan or Rana) on the start screen to open `/driver`.
+
+- **Your cart:** the cart whose `driverId` (from the fleet file, part of every snapshot) is the driver persona's id. The persona's own `cartId` is only compared, and a mismatch is shown as a warning; Driver Mode follows the live fleet. Battery, range, status, passengers and position are the server's values.
+- **Trips:** there is no driver-level ride assignment in the data. Trips name a cart, so Driver Mode shows the open trips (planned, active, cancelling) assigned to your cart, labelled that way. Finished trips are not listed (a cart's `driverId` is its current driver, not who drove earlier trips). The engine allows one open trip per cart; if several ever appear, the driver must pick one.
+- **Steps:** Start trip (`POST /api/ride-requests/:id/start`), Confirm boarding (`/board`, once the cart is at the pickup) and Confirm drop-off (`/drop-off`, once it is at the destination), each for the trip's own request id. The button is offered only when the server's own preconditions hold, re-checked just before sending; one step at a time, no retries, and success is shown only after the server answers. The screen itself moves only on Socket.IO updates or snapshots, never from the REST answer.
+- **Not in Driver Mode:** dispatching rides and advancing the simulation. Until the Operations Center exists, use `POST /api/ride-requests/:id/dispatch` and `POST /api/simulation/advance`. The cart does not move between those calls.
+- Same single realtime connection pattern as the Student App. Filtering by driver is presentation only, not security.
+
 ## Structure
 
 One repository, one package, four folders with fixed boundaries (Plan section 5):
@@ -118,8 +128,9 @@ engine/      Pure TypeScript logic (no network, database or timers): campus grap
 server/      Fastify: REST endpoints, Socket.IO updates, campus and fleet loading, the one in-memory ride state, serves the built app in demo mode
 client/      React + Vite + Tailwind web app
   src/ui/      Design tokens v0 components: brand lockup, pill and icon buttons, badges, campus map
-  src/routes/  Persona picker, /student (Student App area and its routes), /driver, /ops
+  src/routes/  Persona picker, /student (Student App area and its routes), /driver (Driver Mode), /ops
   src/student/ Student App screens: home and booking, ride status, your rides, ride details, fares
+  src/driver/  Driver Mode screens: your cart, the trip assigned to it, start / board / drop-off
   src/lib/     API clients (validated with the shared schemas), realtime store, booking rules, student ride view, persona storage, map geometry
 scripts/     dev.mjs: starts the API and the Vite dev server with one command
 ```

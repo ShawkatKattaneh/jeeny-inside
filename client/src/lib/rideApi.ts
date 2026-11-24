@@ -1,11 +1,11 @@
 /**
- * The Student App's calls to the existing ride-request REST API (Phase 2). Request bodies use the
+ * The Student App's and Driver Mode's calls to the existing ride-request REST API (Phase 2). Request bodies use the
  * shared CreateRideRequestBody shape (studentId, pickupId, destinationId only: the server creates ids,
  * status, fare and timestamps). Successful responses are checked with the shared schemas; errors keep
  * the API's { error, code } body so the UI can show the server's own explanation.
  */
 import { z } from "zod";
-import { RideRequest, type CreateRideRequestBody } from "../../../shared/schemas";
+import { Cart, RideRequest, Trip, type CreateRideRequestBody } from "../../../shared/schemas";
 
 export type ApiResult<T> =
   | { ok: true; value: T }
@@ -14,12 +14,24 @@ export type ApiResult<T> =
 
 const ErrorBody = z.object({ error: z.string(), code: z.string() });
 const CancelResponse = z.object({ request: RideRequest });
+/** Body of a successful start / board / drop-off call: the request, its trip and that trip's cart after the operation. */
+const LifecycleResponse = z.object({ request: RideRequest, trip: Trip, cart: Cart });
+export type LifecycleResult = z.infer<typeof LifecycleResponse>;
+
+/** The driver-side ride operations that exist on the server (Phase 2): POST /api/ride-requests/:id/<action>. */
+export type LifecycleAction = "start" | "board" | "drop-off";
 
 export interface RideApi {
   /** POST /api/ride-requests: create a ride request; answers 201 with the new request. */
   createRideRequest(body: CreateRideRequestBody): Promise<ApiResult<RideRequest>>;
   /** POST /api/ride-requests/:id/cancel: cancel before boarding; answers with the updated request. */
   cancelRide(requestId: string): Promise<ApiResult<RideRequest>>;
+}
+
+/** Driver Mode's calls (Phase 3 Prompt 2). Separate from RideApi so the Student App's API is unchanged. */
+export interface DriverApi {
+  /** POST /api/ride-requests/:id/{start,board,drop-off}: one lifecycle step for one request; takes no body fields. */
+  rideAction(requestId: string, action: LifecycleAction): Promise<ApiResult<LifecycleResult>>;
 }
 
 const UNREACHABLE = "Couldn't reach the Jeeny INSIDE server. Check that this device is on the same network as the server and try again.";
@@ -56,5 +68,12 @@ export function createRideApi(baseUrl = "", fetchImpl: typeof fetch = (...args) 
     createRideRequest: (body) => call(fetchImpl, `${baseUrl}/api/ride-requests`, body, (v) => RideRequest.parse(v)),
     cancelRide: (requestId) =>
       call(fetchImpl, `${baseUrl}/api/ride-requests/${encodeURIComponent(requestId)}/cancel`, {}, (v) => CancelResponse.parse(v).request),
+  };
+}
+
+export function createDriverApi(baseUrl = "", fetchImpl: typeof fetch = (...args) => fetch(...args)): DriverApi {
+  return {
+    rideAction: (requestId, action) =>
+      call(fetchImpl, `${baseUrl}/api/ride-requests/${encodeURIComponent(requestId)}/${action}`, {}, (v) => LifecycleResponse.parse(v)),
   };
 }

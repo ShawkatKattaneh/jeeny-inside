@@ -1,24 +1,22 @@
-import { useCampus } from "../lib/campusContext";
-import { CampusMap } from "../ui/CampusMap";
-import { Card } from "../ui/Card";
-import { AreaLayout, ComingNext } from "./AreaLayout";
+import type { Persona } from "../../../shared/schemas";
+import { DriverDashboard } from "../driver/DriverDashboard";
+import { RealtimeProvider } from "../lib/realtimeContext";
+import type { RealtimeStore } from "../lib/realtimeStore";
+import type { DriverApi } from "../lib/rideApi";
+import { AreaLayout } from "./AreaLayout";
 
-export function DriverHome() {
-  const campus = useCampus();
+/**
+ * Driver Mode (/driver). One realtime connection for the area, opened when a driver persona enters and
+ * closed when they leave (same RealtimeProvider and store as the Student App).
+ * `store`, `api` and `personas` are for tests; the app uses the real socket and REST API.
+ */
+export function DriverHome({ store, api, personas }: { store?: RealtimeStore; api?: DriverApi; personas?: Persona[] } = {}) {
   return (
-    <AreaLayout role="driver">
+    <AreaLayout role="driver" wide>
       {(p) => (
-        <>
-          <Card className="flex items-center justify-between px-4 py-3">
-            <div>
-              <div className="text-xs text-muted">Your cart</div>
-              <div className="text-lg font-extrabold">{p.cartId ?? "No cart"}</div>
-            </div>
-            <span className="rounded-full bg-surface px-3 py-1 text-xs font-semibold text-muted">Off shift</span>
-          </Card>
-          <CampusMap campus={campus} />
-          <ComingNext phase="Phase 4" text="current trip, next stop, passenger list, Arrived / Boarded / Complete, and the cart's battery." />
-        </>
+        <RealtimeProvider store={store}>
+          <DriverDashboard persona={p} api={api} personas={personas} />
+        </RealtimeProvider>
       )}
     </AreaLayout>
   );

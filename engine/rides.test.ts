@@ -63,7 +63,8 @@ describe("createRequest", () => {
     [{ studentId: "s", pickupId: "a", destinationId: "mars" }, "UNKNOWN_LOCATION"],
     [{ studentId: "s", pickupId: "a", destinationId: "x" }, "NOT_A_STOP"],
     [{ studentId: "s", pickupId: "c", destinationId: "c" }, "SAME_LOCATION"],
-    [{ studentId: "s", pickupId: "a", destinationId: "b", mode: "shared" }, "INVALID_REQUEST"],
+    // Phase 4: "solo" and "shared" are valid modes (D12); any other mode is still refused.
+    [{ studentId: "s", pickupId: "a", destinationId: "b", mode: "pooled" }, "INVALID_REQUEST"],
     [{ studentId: "s", pickupId: "a", destinationId: "b", priority: true }, "INVALID_REQUEST"],
   ])("rejects %o with %s and leaves the state unchanged", (input, code) => {
     const r = createRequest(s0, input);
@@ -91,7 +92,13 @@ describe("assignCart (manual, by id)", () => {
     expect(r.trip).toEqual({
       id: "TRIP-0001", cartId: "CART-01",
       stops: [{ locationId: "b", board: [id], alight: [] }, { locationId: "d", board: [], alight: [id] }],
-      passengers: [{ requestId: id, boarded: false }], status: "planned", stopIndex: 0, leg: null,
+      // Phase 4: each rider carries its own lifecycle flags and original solo baseline (D2); the trip
+      // starts with zero actual driving time. a -> b is 100 m and b -> d 200 m at 10 m/s.
+      passengers: [{
+        requestId: id, boarded: false, droppedOff: false, cancelled: false,
+        baseline: { soloPickupSeconds: 10, soloRideSeconds: 20, pickupMark: 10, dropOffMark: 30, cartId: "CART-01", recordedAtClock: 0 },
+      }],
+      status: "planned", stopIndex: 0, leg: null, drivenSeconds: 0,
     });
     expect(cart(r.state)).toMatchObject({ status: "assigned", passengerCount: 0, position: { kind: "at", locationId: "a" } });
     expect(status(r.state, id)).toBe("assigned");

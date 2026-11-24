@@ -211,8 +211,9 @@ describe("ride requests", () => {
       { ...VALID, pickupId: 42 },
       { ...VALID, destinationId: null },
       [VALID],
-      { ...VALID, mode: "shared" },
-      { ...VALID, mode: "solo" },
+      // Phase 4: mode "solo" and "shared" are accepted (D12); other values are still refused.
+      { ...VALID, mode: "pooled" },
+      { ...VALID, mode: null },
       { ...VALID, priority: true },
     ];
     for (const payload of bad) {

@@ -11,7 +11,7 @@
  * - Trip: the cart's execution (cartId, stops, boarded flags, stopIndex, the leg being driven).
  * - Cart: physical facts (position, status, passengerCount), changed only through the fleet store.
  */
-import { RideRequest, Trip, type CampusConfig, type Cart, type TripLeg, type TripStatus } from "../shared/schemas.js";
+import { RideRequest, Trip, type CampusConfig, type Cart, type Path, type RiderBaseline, type TripLeg, type TripStatus } from "../shared/schemas.js";
 import { SETTINGS } from "../shared/settings.js";
 import { buildGraph, routeEtaSeconds, shortestRoute, type CampusGraph } from "./campusGraph.js";
 import { checkCartEligibility } from "./cartRules.js";
@@ -48,7 +48,18 @@ export type RideErrorCode =
   | "ALREADY_CANCELLING"
   | "NOT_AT_STOP"
   | "INVALID_MOVEMENT"
-  | "INCONSISTENT_STATE";
+  | "INCONSISTENT_STATE"
+  // Phase 4 (Ghost Ride joins): why a shared request cannot join a trip.
+  | "REQUEST_NOT_SHARED"
+  | "TRIP_NOT_JOINABLE"
+  | "STAGE_NOT_ALLOWED"
+  | "TRIP_NOT_SHARED"
+  | "SAME_STUDENT"
+  | "TRIP_FULL"
+  | "SOLO_BASELINE_UNAVAILABLE"
+  | "RIDER_BASELINE_MISSING"
+  | "ROUTE_METRIC_UNAVAILABLE"
+  | "DELAY_CAP_EXCEEDED";
 
 export interface RideError {
   code: RideErrorCode;
@@ -179,24 +190,126 @@ function route(state: RideState, from: string, to: string): { ok: true; leg: Tri
 
 const atLocation = (cart: Cart, locationId: string) => cart.position.kind === "at" && cart.position.locationId === locationId;
 
+// ---------- Stop sequence helpers (Phase 4) ----------
+
+type Passenger = Readonly<Trip["passengers"][number]>;
+
+/** Index of the stop where `requestId` boards (kind "board") or leaves (kind "alight"), or -1. */
+export function stopIndexOf(trip: Readonly<Trip>, requestId: string, kind: "board" | "alight"): number {
+  return trip.stops.findIndex((s) => s[kind].includes(requestId));
+}
+
+/** True when every rider event at stop `i` has happened: each boarding rider boarded, each leaving rider dropped off. */
+export function stopDone(trip: Readonly<Trip>, i: number): boolean {
+  const stop = trip.stops[i];
+  if (!stop) return false;
+  const p = (id: string) => trip.passengers.find((x) => x.requestId === id);
+  return stop.board.every((id) => p(id)?.boarded === true) && stop.alight.every((id) => p(id)?.droppedOff === true);
+}
+
+/** Riders still part of the trip's future: not cancelled and not dropped off. */
+export const openPassengers = (trip: Readonly<Trip>): Passenger[] => trip.passengers.filter((p) => !p.cancelled && !p.droppedOff);
+
+/**
+ * A leg from where the cart is now to `targetId`. At a location: the shortest route from there. Mid-path:
+ * the cart first finishes the path it is on, in the direction it is driving (taken from `currentLeg`),
+ * then takes the shortest route from that path's end. The cart never turns round mid-path.
+ */
+export function legFromCart(graph: CampusGraph, cart: Readonly<Cart>, currentLeg: TripLeg | null, targetId: string): { ok: true; leg: TripLeg } | { ok: false; error: RideError } {
+  const pos = cart.position;
+  if (pos.kind === "at") {
+    const r = shortestRoute(graph, pos.locationId, targetId);
+    return r.ok ? { ok: true, leg: { locationIds: r.route.locationIds, pathIds: r.route.pathIds } } : fail("NO_ROUTE", r.error.message);
+  }
+  const i = currentLeg ? currentLeg.pathIds.indexOf(pos.pathId) : -1;
+  if (!currentLeg || i === -1) return fail("INCONSISTENT_STATE", `${cart.id} is on path "${pos.pathId}", which is not on its trip's leg`);
+  const from = currentLeg.locationIds[i]!;
+  const end = currentLeg.locationIds[i + 1]!;
+  const r = shortestRoute(graph, end, targetId);
+  if (!r.ok) return fail("NO_ROUTE", r.error.message);
+  return { ok: true, leg: { locationIds: [from, ...r.route.locationIds], pathIds: [pos.pathId, ...r.route.pathIds] } };
+}
+
+/**
+ * After a rider event at the current stop: if that stop is now done, move to the next stop and plan the
+ * leg to it from the cart's location (the cart is at the stop, since events need it there). When the
+ * last stop is done the trip is completed. Returns the trip unchanged when the stop still has events.
+ */
+function settleStop(state: RideState, trip: Trip, cart: Readonly<Cart>): { ok: true; trip: Trip } | { ok: false; error: RideError } {
+  if (trip.status !== "active" || !stopDone(trip, trip.stopIndex)) return { ok: true, trip };
+  const next = trip.stopIndex + 1;
+  if (next >= trip.stops.length) return { ok: true, trip: { ...trip, status: "completed", stopIndex: trip.stops.length, leg: null } };
+  if (cart.position.kind !== "at") return fail("INCONSISTENT_STATE", `${cart.id} finished a stop while not at a location`);
+  const leg = route(state, cart.position.locationId, trip.stops[next]!.locationId);
+  if (!leg.ok) return leg;
+  return { ok: true, trip: { ...trip, stopIndex: next, leg: leg.leg } };
+}
+
+/**
+ * Set a cart's status and passenger count through the fleet store. When riders are dropped off mid-trip
+ * and nobody is left on board but the trip still has pickups ahead, the cart goes from occupied back
+ * to assigned. The cart rules allow occupied -> idle and idle -> assigned, not occupied -> assigned in
+ * one step, so this is applied as those two allowed steps inside one operation; only the end result
+ * is ever committed (and checked against every ride invariant).
+ */
+function setCartLoad(fleet: Fleet, cart: Readonly<Cart>, status: Cart["status"], passengerCount: number): { ok: true; fleet: Fleet } | { ok: false; error: RideError } {
+  if (cart.status === "occupied" && status === "assigned") {
+    const free = updateFleetCart(fleet, cart.id, { status: "idle", passengerCount });
+    if (!free.ok) return free;
+    return updateFleetCart(free.fleet, cart.id, { status: "assigned" });
+  }
+  return updateFleetCart(fleet, cart.id, { status, passengerCount });
+}
+
+/**
+ * The original solo baseline for `request` on `cart` (D2), in unrounded planned driving seconds:
+ * the time to the pickup over the same route `assignCart` plans, with the same arithmetic as
+ * `legSecondsLeft` (so it equals dispatch's pickupEtaSeconds exactly), and the time from the pickup to
+ * the destination at this cart's speed. Any unavailable route or non-finite value is an error, never 0.
+ * `drivenSeconds` is the trip's actual-driving clock at the moment of recording.
+ */
+export function soloBaselineFor(state: RideState, request: Readonly<RideRequest>, cart: Readonly<Cart>, drivenSeconds: number): { ok: true; baseline: RiderBaseline } | { ok: false; error: RideError } {
+  if (cart.position.kind !== "at") return fail("CART_NOT_AT_LOCATION", `${cart.id} is not at a location`);
+  const toPickup = route(state, cart.position.locationId, request.pickupId);
+  if (!toPickup.ok) return toPickup;
+  const pickup = legSecondsLeft(state.graph, cart, toPickup.leg);
+  if (!pickup.ok) return pickup;
+  const toDest = route(state, request.pickupId, request.destinationId);
+  if (!toDest.ok) return toDest;
+  const ride = routeDrivingSeconds(state.graph, toDest.leg, cart.maxSpeedKmh);
+  if (!ride.ok) return ride;
+  if (!Number.isFinite(pickup.seconds) || !Number.isFinite(ride.seconds) || !Number.isFinite(drivenSeconds)) {
+    return fail("SOLO_BASELINE_UNAVAILABLE", `The solo baseline for ${request.id} on ${cart.id} is not a finite number of seconds`);
+  }
+  const pickupMark = drivenSeconds + pickup.seconds;
+  return {
+    ok: true,
+    baseline: {
+      soloPickupSeconds: pickup.seconds, soloRideSeconds: ride.seconds,
+      pickupMark, dropOffMark: pickupMark + ride.seconds,
+      cartId: cart.id, recordedAtClock: state.clockSeconds,
+    },
+  };
+}
+
 // ---------- Operations ----------
 
 export interface RideRequestInput {
   studentId: string;
   pickupId: string;
   destinationId: string;
-  /** Only "solo" in Part 3. */
+  /** "solo" (default) or "shared" (Phase 4: the student opts into a Ghost Ride). */
   mode?: string;
-  /** Priority rides are not supported in Part 3. */
+  /** Priority rides are not supported yet. */
   priority?: boolean;
 }
 
-/** Create a solo ride request after checking both locations and that a route exists. */
+/** Create a solo or shared ride request after checking both locations and that a route exists. */
 export function createRequest(state: RideState, input: RideRequestInput): RideResult<{ request: Readonly<RideRequest> }> {
   if (!input || typeof input !== "object") return fail("INVALID_REQUEST", "A ride request needs studentId, pickupId and destinationId");
   const { studentId, pickupId, destinationId, mode = "solo", priority = false } = input;
   if (typeof studentId !== "string" || studentId.length === 0) return fail("INVALID_REQUEST", "studentId is required");
-  if (mode !== "solo") return fail("INVALID_REQUEST", `Only solo rides are supported for now, not "${String(mode)}"`);
+  if (mode !== "solo" && mode !== "shared") return fail("INVALID_REQUEST", `Ride mode must be "solo" or "shared", not "${String(mode)}"`);
   if (priority !== false) return fail("INVALID_REQUEST", "Priority rides are not supported yet");
   for (const [field, id] of [["pickupId", pickupId], ["destinationId", destinationId]] as const) {
     const loc = typeof id === "string" ? state.campus.locations.find((l) => l.id === id) : undefined;
@@ -208,17 +321,19 @@ export function createRequest(state: RideState, input: RideRequestInput): RideRe
   if (!r.ok) return r;
 
   const t = nowMs(state);
+  // Same simulated fare for every request, solo or shared (D8, F1): no discount and no surcharge.
   const request = freezeRequest(RideRequest.parse({
     id: `REQ-${pad(state.nextRequestNo)}`, studentId, pickupId, destinationId,
-    mode: "solo", priority: false, status: "requested", createdAt: t, updatedAt: t,
-    fareJod: SETTINGS.fareJod, freeLoyaltyRide: false,
+    mode, priority: false, status: "requested", createdAt: t, updatedAt: t,
+    fareJod: mode === "shared" ? SETTINGS.sharedFareJod : SETTINGS.fareJod, freeLoyaltyRide: false,
   }));
   return finish(withChanges(state, { requests: [request], nextRequestNo: state.nextRequestNo + 1 }), { request });
 }
 
 /**
  * Manually assign a cart, chosen by the caller, to a requested ride. Checks run in a fixed order and
- * the first failure is returned. Never lists, ranks or picks carts.
+ * the first failure is returned. Never lists, ranks or picks carts. Records the rider's original solo
+ * baseline (D2) on the new trip.
  */
 export function assignCart(state: RideState, requestId: string, cartId: string): RideResult<{ trip: Readonly<Trip> }> {
   const req = getRequest(state, requestId);
@@ -241,6 +356,8 @@ export function assignCart(state: RideState, requestId: string, cartId: string):
   if (!toPickup.ok) return toPickup;
   const toDest = route(state, request.pickupId, request.destinationId);
   if (!toDest.ok) return toDest;
+  const baseline = soloBaselineFor(state, request, cart, 0);
+  if (!baseline.ok) return baseline;
 
   const fleet = updateFleetCart(state.fleet, cartId, { status: "assigned" });
   if (!fleet.ok) return fleet;
@@ -250,14 +367,17 @@ export function assignCart(state: RideState, requestId: string, cartId: string):
       { locationId: request.pickupId, board: [requestId], alight: [] },
       { locationId: request.destinationId, board: [], alight: [requestId] },
     ],
-    passengers: [{ requestId, boarded: false }],
-    status: "planned", stopIndex: 0, leg: null,
+    passengers: [{ requestId, boarded: false, droppedOff: false, cancelled: false, baseline: baseline.baseline }],
+    status: "planned", stopIndex: 0, leg: null, drivenSeconds: 0,
   });
   const updated = freezeRequest({ ...request, status: "assigned", updatedAt: nowMs(state) });
   return finish(withChanges(state, { fleet: fleet.fleet, requests: [updated], trips: [trip], nextTripNo: state.nextTripNo + 1 }), { trip });
 }
 
-/** Start an assigned trip: compute the route to the pickup. The cart moves on the next `advance`. */
+/**
+ * Start an assigned trip: compute the route to its first stop. Every rider on the trip moves from
+ * assigned to arriving (on a shared trip, all of them at once). The cart moves on the next `advance`.
+ */
 export function startTrip(state: RideState, requestId: string): RideResult<{ trip: Readonly<Trip> }> {
   const req = getRequest(state, requestId);
   if (!req.ok) return req;
@@ -269,15 +389,26 @@ export function startTrip(state: RideState, requestId: string): RideResult<{ tri
   const cart = getCart(state.fleet, trip.cartId);
   if (!cart.ok) return fail("INCONSISTENT_STATE", cart.error.message);
   if (cart.cart.position.kind !== "at") return fail("CART_NOT_AT_LOCATION", `${trip.cartId} is not at a location`);
-  const leg = route(state, cart.cart.position.locationId, request.pickupId);
+  const first = trip.stops[0];
+  if (!first) return fail("INCONSISTENT_STATE", `${trip.id} has no stops`);
+  const leg = route(state, cart.cart.position.locationId, first.locationId);
   if (!leg.ok) return leg;
 
   const started = makeTrip({ ...trip, status: "active", leg: leg.leg });
-  const updated = freezeRequest({ ...request, status: "arriving", updatedAt: nowMs(state) });
-  return finish(withChanges(state, { requests: [updated], trips: [started] }), { trip: started });
+  const riders: Readonly<RideRequest>[] = [];
+  for (const p of trip.passengers) {
+    if (p.cancelled) continue;
+    const r = state.requests.get(p.requestId);
+    if (r?.status === "assigned") riders.push(freezeRequest({ ...r, status: "arriving", updatedAt: nowMs(state) }));
+  }
+  return finish(withChanges(state, { requests: riders, trips: [started] }), { trip: started });
 }
 
-/** Board the passenger. The cart must be stopped at the pickup. Passenger count changes only here and in dropOff. */
+/**
+ * Board one rider. The cart must be stopped at that rider's pickup, and that pickup must be the trip's
+ * current stop. Passenger count changes only here and in dropOff. When every event at the stop is done
+ * the trip moves to its next stop.
+ */
 export function board(state: RideState, requestId: string): RideResult<{ trip: Readonly<Trip> }> {
   const req = getRequest(state, requestId);
   if (!req.ok) return req;
@@ -285,25 +416,29 @@ export function board(state: RideState, requestId: string): RideResult<{ trip: R
   if (request.status === "completed" || request.status === "cancelled") return fail("RIDE_FINISHED", `${requestId} is ${request.status}`);
   if (request.status !== "arriving") return fail("INVALID_TRANSITION", `${requestId} is ${request.status}; boarding needs a started trip with the cart at the pickup`);
   const trip = tripForRequest(state, requestId);
-  if (!trip || trip.status !== "active" || trip.stopIndex !== 0) return fail("INCONSISTENT_STATE", `${requestId} has no active trip waiting at its pickup`);
+  const at = trip ? stopIndexOf(trip, requestId, "board") : -1;
+  if (!trip || trip.status !== "active" || at === -1 || at < trip.stopIndex) return fail("INCONSISTENT_STATE", `${requestId} has no active trip waiting at its pickup`);
   const cart = getCart(state.fleet, trip.cartId);
   if (!cart.ok) return fail("INCONSISTENT_STATE", cart.error.message);
+  if (at > trip.stopIndex) return fail("NOT_AT_STOP", `${trip.cartId} is serving earlier stops before the pickup "${request.pickupId}"`);
   if (!atLocation(cart.cart, request.pickupId)) return fail("NOT_AT_STOP", `${trip.cartId} has not reached the pickup "${request.pickupId}" yet`);
   if (cart.cart.passengerCount >= cart.cart.seats) return fail("CART_INELIGIBLE", `${trip.cartId} has no free seat`);
-  const leg = route(state, request.pickupId, request.destinationId);
-  if (!leg.ok) return leg;
 
+  const marked: Trip = { ...trip, passengers: trip.passengers.map((p) => (p.requestId === requestId ? { ...p, boarded: true } : p)) };
+  const settled = settleStop(state, marked, cart.cart);
+  if (!settled.ok) return settled;
   const fleet = updateFleetCart(state.fleet, trip.cartId, { status: "occupied", passengerCount: cart.cart.passengerCount + 1 });
   if (!fleet.ok) return fleet;
-  const boarded = makeTrip({
-    ...trip, stopIndex: 1, leg: leg.leg,
-    passengers: trip.passengers.map((p) => (p.requestId === requestId ? { ...p, boarded: true } : p)),
-  });
+  const boarded = makeTrip(settled.trip);
   const updated = freezeRequest({ ...request, status: "on_board", updatedAt: nowMs(state) });
   return finish(withChanges(state, { fleet: fleet.fleet, requests: [updated], trips: [boarded] }), { trip: boarded });
 }
 
-/** Drop the passenger off. The cart must be stopped at the destination. Completes the ride and frees the cart. */
+/**
+ * Drop one rider off. The cart must be stopped at that rider's destination, and it must be the trip's
+ * current stop. Completes THAT rider's ride; the trip completes only when its last stop is done, and
+ * the cart is freed only then (or goes back to assigned when nobody is left on board but pickups remain).
+ */
 export function dropOff(state: RideState, requestId: string): RideResult<{ trip: Readonly<Trip> }> {
   const req = getRequest(state, requestId);
   if (!req.ok) return req;
@@ -311,27 +446,41 @@ export function dropOff(state: RideState, requestId: string): RideResult<{ trip:
   if (request.status === "completed" || request.status === "cancelled") return fail("RIDE_FINISHED", `${requestId} is ${request.status}`);
   if (request.status !== "on_board") return fail("INVALID_TRANSITION", `${requestId} is ${request.status}; drop-off needs the passenger on board`);
   const trip = tripForRequest(state, requestId);
-  if (!trip || trip.status !== "active" || trip.stopIndex !== 1) return fail("INCONSISTENT_STATE", `${requestId} has no active trip heading to its destination`);
+  const at = trip ? stopIndexOf(trip, requestId, "alight") : -1;
+  if (!trip || trip.status !== "active" || at === -1 || at < trip.stopIndex) return fail("INCONSISTENT_STATE", `${requestId} has no active trip heading to its destination`);
   const cart = getCart(state.fleet, trip.cartId);
   if (!cart.ok) return fail("INCONSISTENT_STATE", cart.error.message);
+  if (at > trip.stopIndex) return fail("NOT_AT_STOP", `${trip.cartId} is serving earlier stops before the destination "${request.destinationId}"`);
   if (!atLocation(cart.cart, request.destinationId)) return fail("NOT_AT_STOP", `${trip.cartId} has not reached the destination "${request.destinationId}" yet`);
 
   const left = cart.cart.passengerCount - 1;
-  const fleet = updateFleetCart(state.fleet, trip.cartId, { status: left > 0 ? "occupied" : "idle", passengerCount: left });
+  const marked: Trip = { ...trip, passengers: trip.passengers.map((p) => (p.requestId === requestId ? { ...p, droppedOff: true } : p)) };
+  const settled = settleStop(state, marked, cart.cart);
+  if (!settled.ok) return settled;
+  const status = left > 0 ? "occupied" : settled.trip.status === "completed" ? "idle" : "assigned";
+  const fleet = setCartLoad(state.fleet, cart.cart, status, left);
   if (!fleet.ok) return fleet;
-  const done = makeTrip({ ...trip, status: "completed", stopIndex: trip.stops.length, leg: null });
+  const done = makeTrip(settled.trip);
   const updated = freezeRequest({ ...request, status: "completed", updatedAt: nowMs(state) });
   return finish(withChanges(state, { fleet: fleet.fleet, requests: [updated], trips: [done] }), { trip: done });
 }
 
 /**
- * Cancel a ride before boarding (D3, D4).
+ * Cancel a ride before boarding (D3, D4; per rider from Phase 4, D7).
  * - requested: the request is cancelled; no cart involved.
- * - assigned, or arriving with the cart at a location: trip cancelled, cart idle where it is.
- * - arriving with the cart mid-path: request cancelled now; trip becomes "cancelling" with a leg of
- *   only the current path; the cart stays assigned and keeps its exact progress. `advance` finishes
- *   that one path, then the trip is cancelled and the cart goes idle.
  * - on board: refused. Completed or cancelled: refused.
+ * - The only rider still on the trip (nobody else waiting, on board or already dropped off): the Part 3
+ *   behaviour, unchanged. Assigned, or arriving with the cart at a location: trip cancelled, cart idle
+ *   where it is. Arriving with the cart mid-path: request cancelled now; trip becomes "cancelling" with
+ *   a leg of only the current path; `advance` finishes that one path, then the trip is cancelled and
+ *   the cart goes idle.
+ * - Other riders remain (Phase 4): only this rider is cancelled. Its stops are removed, the trip and the
+ *   other riders' requests keep their states, and the leg to the next remaining stop is re-planned from
+ *   the cart's position (finishing the current path first when mid-path). If nobody is left to serve
+ *   (everyone else was already dropped off), the trip completes where the cart is, or finishes its
+ *   current path first ("cancelling", then completed).
+ * Never refused because the new route changes anyone's delay; delays are always recomputed from the
+ * riders' original baselines when they are next evaluated.
  */
 export function cancel(state: RideState, requestId: string): RideResult<{ trip: Readonly<Trip> | null }> {
   const req = getRequest(state, requestId);
@@ -350,6 +499,8 @@ export function cancel(state: RideState, requestId: string): RideResult<{ trip: 
   if (!trip || !(trip.status === "planned" || trip.status === "active")) return fail("INCONSISTENT_STATE", `${requestId} has no open trip`);
   const cart = getCart(state.fleet, trip.cartId);
   if (!cart.ok) return fail("INCONSISTENT_STATE", cart.error.message);
+  const others = trip.passengers.filter((p) => p.requestId !== requestId && !p.cancelled);
+  if (others.length > 0) return cancelOneRider(state, trip, cart.cart, requestId, updated);
   const pos = cart.cart.position;
 
   if (pos.kind === "at") {
@@ -365,6 +516,67 @@ export function cancel(state: RideState, requestId: string): RideResult<{ trip: 
   const cleanupLeg = { locationIds: [trip.leg.locationIds[i]!, trip.leg.locationIds[i + 1]!], pathIds: [pos.pathId] };
   const cancelling = makeTrip({ ...trip, status: "cancelling", leg: cleanupLeg });
   return finish(withChanges(state, { requests: [updated], trips: [cancelling] }), { trip: cancelling });
+}
+
+/** Phase 4: cancel one waiting rider on a trip that has other riders (see `cancel`). */
+function cancelOneRider(state: RideState, trip: Readonly<Trip>, cart: Readonly<Cart>, requestId: string, updated: Readonly<RideRequest>): RideResult<{ trip: Readonly<Trip> | null }> {
+  const passengers = trip.passengers.map((p) => (p.requestId === requestId ? { ...p, cancelled: true } : p));
+  // Remove the rider's events; drop stops left with no events, keeping the stop index on the same stop.
+  let stopIndex = trip.stopIndex;
+  const stops: Trip["stops"] = [];
+  trip.stops.forEach((s, i) => {
+    const kept = { ...s, board: s.board.filter((id) => id !== requestId), alight: s.alight.filter((id) => id !== requestId) };
+    if (kept.board.length === 0 && kept.alight.length === 0) {
+      if (i < trip.stopIndex) stopIndex -= 1;
+      return;
+    }
+    stops.push(kept);
+  });
+  let next: Trip = { ...trip, passengers, stops, stopIndex };
+  const stillToServe = next.passengers.some((p) => !p.cancelled && !p.droppedOff);
+
+  if (trip.status === "planned") {
+    return finish(withChanges(state, { requests: [updated], trips: [makeTrip(next)] }), { trip: makeTrip(next) });
+  }
+
+  if (!stillToServe) {
+    // Everyone else was already dropped off: nothing left to serve. Nobody is on board, so the cart is assigned.
+    next = { ...next, stopIndex: next.stops.length };
+    const pos = cart.position;
+    if (pos.kind === "at") {
+      const fleet = updateFleetCart(state.fleet, cart.id, { status: "idle" });
+      if (!fleet.ok) return fleet;
+      const completed = makeTrip({ ...next, status: "completed", leg: null });
+      return finish(withChanges(state, { fleet: fleet.fleet, requests: [updated], trips: [completed] }), { trip: completed });
+    }
+    const i = trip.leg ? trip.leg.pathIds.indexOf(pos.pathId) : -1;
+    if (!trip.leg || i === -1) return fail("INCONSISTENT_STATE", `${cart.id} is on path "${pos.pathId}", which is not on its trip's leg`);
+    const cleanupLeg = { locationIds: [trip.leg.locationIds[i]!, trip.leg.locationIds[i + 1]!], pathIds: [pos.pathId] };
+    const cancelling = makeTrip({ ...next, status: "cancelling", leg: cleanupLeg });
+    return finish(withChanges(state, { requests: [updated], trips: [cancelling] }), { trip: cancelling });
+  }
+
+  // Active with riders left. If the current stop is now fully handled (its remaining events already
+  // happened), move on from it; the cart is standing there.
+  if (stopDone(next, next.stopIndex)) {
+    const settled = settleStop(state, next, cart);
+    if (!settled.ok) return settled;
+    next = settled.trip;
+  } else {
+    const target = next.stops[next.stopIndex];
+    if (!target) return fail("INCONSISTENT_STATE", `${trip.id} has riders left but no stop to serve`);
+    // The stop the cart was heading to is still there (it had other riders' events): keep the leg being
+    // driven. Otherwise re-plan to the next remaining stop from where the cart is.
+    const oldTarget = trip.stops[trip.stopIndex];
+    const keptOldTarget = oldTarget !== undefined && [...oldTarget.board, ...oldTarget.alight].some((id) => id !== requestId);
+    if (!keptOldTarget || !trip.leg) {
+      const leg = legFromCart(state.graph, cart, trip.leg, target.locationId);
+      if (!leg.ok) return leg;
+      next = { ...next, leg: leg.leg };
+    }
+  }
+  const done = makeTrip(next);
+  return finish(withChanges(state, { requests: [updated], trips: [done] }), { trip: done });
 }
 
 /**
@@ -406,6 +618,15 @@ export function remainingEtaSeconds(state: RideState, tripId: string): { ok: tru
   return r.ok ? { ok: true, seconds: Math.round(r.seconds) } : r;
 }
 
+/**
+ * The one speed rule for planned and simulated driving: a cart goes min(its own top speed, the path's
+ * speed), converted from km/h to m/s. `legSecondsLeft`, `routeDrivingSeconds` and the simulation's
+ * `driveLeg` all use this, so planned times and actual driving time are on the same scale.
+ */
+export function drivingSpeedMps(cartSpeedKmh: number, path: Pick<Path, "speedKmh">): number {
+  return Math.min(cartSpeedKmh, path.speedKmh) / 3.6;
+}
+
 /** Exact (unrounded) seconds for `cart` to finish `leg` from where it is now. */
 export function legSecondsLeft(graph: CampusGraph, cart: Readonly<Cart>, leg: TripLeg): { ok: true; seconds: number } | { ok: false; error: RideError } {
   const at = whereOnLeg(graph, cart, leg);
@@ -414,9 +635,41 @@ export function legSecondsLeft(graph: CampusGraph, cart: Readonly<Cart>, leg: Tr
   for (let i = at.edge; i < leg.pathIds.length; i++) {
     const p = graph.paths.get(leg.pathIds[i]!)!;
     const left = i === at.edge ? (1 - at.travelled) * p.lengthMeters : p.lengthMeters;
-    seconds += left / (Math.min(cart.maxSpeedKmh, p.speedKmh) / 3.6);
+    seconds += left / drivingSpeedMps(cart.maxSpeedKmh, p);
   }
   return { ok: true, seconds };
+}
+
+/** Exact (unrounded) meters left for `cart` on `leg` from where it is now. */
+export function legMetersLeft(graph: CampusGraph, cart: Readonly<Cart>, leg: TripLeg): { ok: true; meters: number } | { ok: false; error: RideError } {
+  const at = whereOnLeg(graph, cart, leg);
+  if (!at.ok) return at;
+  let meters = 0;
+  for (let i = at.edge; i < leg.pathIds.length; i++) {
+    const p = graph.paths.get(leg.pathIds[i]!)!;
+    meters += i === at.edge ? (1 - at.travelled) * p.lengthMeters : p.lengthMeters;
+  }
+  return { ok: true, meters };
+}
+
+/**
+ * Exact (unrounded) planned driving seconds for a whole leg at `cartSpeedKmh`, with the same arithmetic
+ * as `legSecondsLeft` from the leg's start. Unlike `routeEtaSeconds` it never rounds. An undrivable leg,
+ * an invalid speed or a non-finite result is an error, never 0.
+ */
+export function routeDrivingSeconds(graph: CampusGraph, leg: TripLeg, cartSpeedKmh: number): { ok: true; seconds: number; meters: number } | { ok: false; error: RideError } {
+  if (!(Number.isFinite(cartSpeedKmh) && cartSpeedKmh > 0)) return fail("ROUTE_METRIC_UNAVAILABLE", `Cart speed ${cartSpeedKmh} km/h cannot be used for a driving time`);
+  const bad = legError(graph, leg);
+  if (bad) return fail("ROUTE_METRIC_UNAVAILABLE", bad);
+  let seconds = 0;
+  let meters = 0;
+  for (const id of leg.pathIds) {
+    const p = graph.paths.get(id)!;
+    seconds += p.lengthMeters / drivingSpeedMps(cartSpeedKmh, p);
+    meters += p.lengthMeters;
+  }
+  if (!Number.isFinite(seconds) || !Number.isFinite(meters)) return fail("ROUTE_METRIC_UNAVAILABLE", "The route's driving time is not a finite number");
+  return { ok: true, seconds, meters };
 }
 
 /**
@@ -493,19 +746,46 @@ export function legError(graph: CampusGraph, leg: TripLeg): string | null {
 
 // ---------- Invariants ----------
 
-/** Every rule that ties requests, trips and carts together. Empty when the state is consistent. */
+/**
+ * Every rule that ties requests, trips and carts together. Empty when the state is consistent.
+ * Phase 4 generalises the Part 3 solo rules to several riders per trip: a solo trip (one rider, two
+ * stops) satisfies exactly the rules it did before.
+ */
 export function checkRideInvariants(state: RideState): string[] {
   const problems: string[] = [];
   const tripByRequest = new Map<string, Readonly<Trip>>();
   const openByCart = new Map<string, Readonly<Trip>[]>();
 
   for (const t of state.trips.values()) {
-    if (t.passengers.length !== 1 || t.stops.length !== 2) problems.push(`${t.id} is not a solo trip`);
+    if (t.passengers.length === 0 || t.stops.length < 2) problems.push(`${t.id} needs at least one rider and two stops`);
+    const ids = new Set<string>();
     for (const p of t.passengers) {
+      if (ids.has(p.requestId)) problems.push(`${t.id} lists ${p.requestId} twice`);
+      ids.add(p.requestId);
       if (tripByRequest.has(p.requestId)) problems.push(`${p.requestId} is on more than one trip`);
       tripByRequest.set(p.requestId, t);
       if (!state.requests.has(p.requestId)) problems.push(`${t.id} carries unknown request ${p.requestId}`);
+      if (p.droppedOff && !p.boarded) problems.push(`${t.id}: ${p.requestId} was dropped off without boarding`);
+      if (p.cancelled && p.boarded) problems.push(`${t.id}: ${p.requestId} is cancelled after boarding`);
+      if (p.baseline) {
+        const b = p.baseline;
+        if (![b.soloPickupSeconds, b.soloRideSeconds, b.pickupMark, b.dropOffMark].every(Number.isFinite)) problems.push(`${t.id}: ${p.requestId} has a non-finite baseline`);
+        if (b.dropOffMark !== b.pickupMark + b.soloRideSeconds) problems.push(`${t.id}: ${p.requestId} baseline drop-off mark does not equal pickup mark + solo ride time`);
+      }
+      // A rider's stops: exactly one boarding stop before exactly one drop-off stop; none once removed by a per-rider cancel.
+      const boards = t.stops.flatMap((s, i) => (s.board.includes(p.requestId) ? [i] : []));
+      const alights = t.stops.flatMap((s, i) => (s.alight.includes(p.requestId) ? [i] : []));
+      if (p.cancelled) {
+        if (boards.length || alights.length) problems.push(`${t.id} still has stops for cancelled rider ${p.requestId}`);
+      } else if (boards.length !== 1 || alights.length !== 1 || boards[0]! >= alights[0]!) {
+        problems.push(`${t.id} must board ${p.requestId} once and drop it off once, later`);
+      }
     }
+    t.stops.forEach((s, i) => {
+      if (s.board.length === 0 && s.alight.length === 0) problems.push(`${t.id} stop ${i} has nobody to board or drop off`);
+      for (const id of [...s.board, ...s.alight]) if (!ids.has(id)) problems.push(`${t.id} stop ${i} names ${id}, who is not on the trip`);
+    });
+    if (!Number.isFinite(t.drivenSeconds) || t.drivenSeconds < 0) problems.push(`${t.id} has invalid drivenSeconds ${t.drivenSeconds}`);
     if (!state.fleet.carts.has(t.cartId)) problems.push(`${t.id} uses unknown cart ${t.cartId}`);
     if (OPEN_TRIP_STATUSES.includes(t.status)) openByCart.set(t.cartId, [...(openByCart.get(t.cartId) ?? []), t]);
     const legNeeded = t.status === "active" || t.status === "cancelling";
@@ -516,35 +796,62 @@ export function checkRideInvariants(state: RideState): string[] {
     }
     if (t.status === "active" && t.leg && t.leg.locationIds.at(-1) !== t.stops[t.stopIndex]?.locationId) problems.push(`${t.id} leg does not end at its next stop`);
     if (t.status === "cancelling" && t.leg && t.leg.pathIds.length !== 1) problems.push(`${t.id} cleanup leg must be exactly one path`);
-    if (t.status === "completed" && t.stopIndex !== t.stops.length) problems.push(`${t.id} completed with stops left`);
+    if (t.status === "planned" && (t.stopIndex !== 0 || t.passengers.some((p) => p.boarded))) problems.push(`${t.id} is planned but has started`);
+    if (t.status === "active" || t.status === "completed") {
+      // Stops before stopIndex are fully handled; stops after it have not started.
+      t.stops.forEach((_s, i) => {
+        if (i < t.stopIndex && !stopDone(t, i)) problems.push(`${t.id} passed stop ${i} with riders not handled`);
+        if (i > t.stopIndex && t.stops[i]!.board.some((id) => t.passengers.find((p) => p.requestId === id)?.boarded)) problems.push(`${t.id} boarded a rider at a later stop ${i}`);
+        if (i > t.stopIndex && t.stops[i]!.alight.some((id) => t.passengers.find((p) => p.requestId === id)?.droppedOff)) problems.push(`${t.id} dropped off a rider at a later stop ${i}`);
+      });
+    }
+    if (t.status === "active" && t.stopIndex >= t.stops.length) problems.push(`${t.id} is active with no stop left`);
+    if (t.status === "completed") {
+      if (t.stopIndex !== t.stops.length) problems.push(`${t.id} completed with stops left`);
+      if (t.passengers.some((p) => !p.cancelled && !p.droppedOff) || !t.passengers.some((p) => p.droppedOff)) problems.push(`${t.id} completed without every rider dropped off or cancelled`);
+    }
+    // Riders not yet on their way to a drop-off cannot be counted out of the seats: committed riders fit.
+    const cart = state.fleet.carts.get(t.cartId);
+    if (cart && OPEN_TRIP_STATUSES.includes(t.status) && openPassengers(t).length > cart.seats) problems.push(`${t.id} commits ${openPassengers(t).length} riders to ${cart.seats} seats`);
+    // One student rides a trip at most once (cancelled entries excepted).
+    const students = t.passengers.filter((p) => !p.cancelled).map((p) => state.requests.get(p.requestId)?.studentId);
+    if (new Set(students).size !== students.length) problems.push(`${t.id} carries the same student twice`);
   }
 
   for (const r of state.requests.values()) {
     const t = tripByRequest.get(r.id);
-    if (t) {
-      const [pickup, dest] = t.stops;
-      if (pickup?.locationId !== r.pickupId) problems.push(`${t.id} pickup "${pickup?.locationId}" does not match ${r.id} pickup "${r.pickupId}"`);
-      if (dest?.locationId !== r.destinationId) problems.push(`${t.id} destination "${dest?.locationId}" does not match ${r.id} destination "${r.destinationId}"`);
-      if (!pickup?.board.includes(r.id)) problems.push(`${t.id} does not board ${r.id} at its pickup`);
-      if (!dest?.alight.includes(r.id)) problems.push(`${t.id} does not drop off ${r.id} at its destination`);
+    const p = t?.passengers.find((x) => x.requestId === r.id);
+    if (t && p && !p.cancelled) {
+      const bi = stopIndexOf(t, r.id, "board");
+      const ai = stopIndexOf(t, r.id, "alight");
+      const pickup = t.stops[bi];
+      const dest = t.stops[ai];
+      if (pickup && pickup.locationId !== r.pickupId) problems.push(`${t.id} pickup "${pickup.locationId}" does not match ${r.id} pickup "${r.pickupId}"`);
+      if (dest && dest.locationId !== r.destinationId) problems.push(`${t.id} destination "${dest.locationId}" does not match ${r.id} destination "${r.destinationId}"`);
+      if (!pickup) problems.push(`${t.id} does not board ${r.id} at its pickup`);
+      if (!dest) problems.push(`${t.id} does not drop off ${r.id} at its destination`);
     }
-    const boarded = t?.passengers.find((p) => p.requestId === r.id)?.boarded;
+    const bi = t && p ? stopIndexOf(t, r.id, "board") : -1;
+    const ai = t && p ? stopIndexOf(t, r.id, "alight") : -1;
+    const waiting = !!p && !p.boarded && !p.cancelled;
     const expect = (ok: boolean, what: string) => { if (!ok) problems.push(`${r.id} is ${r.status} but ${what}`); };
     switch (r.status) {
       case "requested": expect(!t, "has a trip"); break;
-      case "assigned": expect(t?.status === "planned" && boarded === false, "its trip is not planned"); break;
-      case "arriving": expect(t?.status === "active" && t.stopIndex === 0 && boarded === false, "its trip is not heading to the pickup"); break;
-      case "on_board": expect(t?.status === "active" && t.stopIndex === 1 && boarded === true, "its trip is not carrying it to the destination"); break;
-      case "completed": expect(t?.status === "completed" && boarded === true, "its trip is not completed"); break;
-      case "cancelled": expect(!t || ((t.status === "cancelling" || t.status === "cancelled") && boarded === false), "its trip is not cancelled"); break;
+      case "assigned": expect(t?.status === "planned" && waiting, "its trip is not planned"); break;
+      case "arriving": expect(t?.status === "active" && waiting && bi >= t.stopIndex, "its trip is not heading to the pickup"); break;
+      case "on_board": expect(t?.status === "active" && p?.boarded === true && !p.droppedOff && ai >= t.stopIndex, "its trip is not carrying it to the destination"); break;
+      case "completed": expect(!!t && p?.boarded === true && p.droppedOff === true && t.status !== "planned" && t.status !== "cancelled", "its trip is not completed"); break;
+      case "cancelled": expect(!t || (p?.boarded === false && (p.cancelled || t.status === "cancelling" || t.status === "cancelled")), "its trip is not cancelled"); break;
     }
+    if (p && r.status !== "cancelled" && p.cancelled) problems.push(`${r.id} is ${r.status} but its rider entry is cancelled`);
+    if (p?.droppedOff && r.status !== "completed") problems.push(`${r.id} is ${r.status} but was dropped off`);
   }
 
   for (const c of state.fleet.carts.values()) {
     const open = openByCart.get(c.id) ?? [];
     if (open.length > 1) problems.push(`${c.id} is on ${open.length} open trips`);
     const t = open[0];
-    const boardedCount = t ? t.passengers.filter((p) => p.boarded).length : 0;
+    const boardedCount = t ? t.passengers.filter((p) => p.boarded && !p.droppedOff).length : 0;
     if (c.passengerCount !== boardedCount) problems.push(`${c.id} has ${c.passengerCount} passengers but ${boardedCount} boarded`);
     if (t && boardedCount === 0 && c.status !== "assigned") problems.push(`${c.id} is on ${t.id} with nobody on board but is ${c.status}, not assigned`);
     if (t && boardedCount > 0 && c.status !== "occupied") problems.push(`${c.id} carries passengers on ${t.id} but is ${c.status}`);

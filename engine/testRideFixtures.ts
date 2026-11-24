@@ -58,7 +58,7 @@ export function loadValidCampus(file: string): CampusConfig {
 
 /**
  * Everything that makes up the deterministic engine state: clock, id counters, requests, trips and
- * carts. Path progress is rounded to 1e-9 so floating-point noise from different tick sizes does
+ * carts. Path progress and trip drivenSeconds are rounded to 1e-9 so floating-point noise from different tick sizes does
  * not count as a difference. Object identity is not compared.
  */
 export function snapshot(s: RideState): string {
@@ -68,7 +68,8 @@ export function snapshot(s: RideState): string {
     nextRequestNo: s.nextRequestNo,
     nextTripNo: s.nextTripNo,
     requests: [...s.requests.values()],
-    trips: [...s.trips.values()],
+    // drivenSeconds sums many small steps: rounded like progress (Phase 4).
+    trips: [...s.trips.values()].map((t) => ({ ...t, drivenSeconds: round(t.drivenSeconds) })),
     carts: [...s.fleet.carts.values()].map((c) => ({ ...c, position: c.position.kind === "on_path" ? { ...c.position, progress: round(c.position.progress) } : c.position })),
   });
 }

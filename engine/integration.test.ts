@@ -372,7 +372,8 @@ describe("deterministic replay and tick size on Wadi Cedar", () => {
       expect(snapshot(s), step.label).toBe(before);
       if (r.ok && r.state) s = r.state;
       const { state: _omit, ...rest } = r;
-      results.push(`${step.label}: ${JSON.stringify(rest)}`);
+      // Phase 4: a trip's drivenSeconds sums many small steps, so it is rounded to 1e-9 like progress.
+      results.push(`${step.label}: ${JSON.stringify(rest, (k, v) => (k === "drivenSeconds" ? Math.round(v * 1e9) / 1e9 : v))}`);
       expect(R.checkRideInvariants(s), step.label).toEqual([]);
     }
     return { s, results };

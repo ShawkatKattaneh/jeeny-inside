@@ -26,7 +26,8 @@ function snapshot(s: RideState) {
   return JSON.stringify({
     clock: round(s.clockSeconds),
     requests: [...s.requests.values()],
-    trips: [...s.trips.values()],
+    // drivenSeconds sums many small steps: rounded like progress (Phase 4).
+    trips: [...s.trips.values()].map((t) => ({ ...t, drivenSeconds: round(t.drivenSeconds) })),
     carts: [...s.fleet.carts.values()].map((c) => ({ ...c, position: c.position.kind === "on_path" ? { ...c.position, progress: round(c.position.progress) } : c.position })),
   });
 }

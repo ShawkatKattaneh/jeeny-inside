@@ -170,9 +170,10 @@ describe("updates for each operation", () => {
     const started = await step(() => act(live.app, id, "start"), 3);
     expect(started).toMatchObject({ operation: "ride.started", requests: [{ status: "arriving" }], trips: [{ status: "active", leg: { locationIds: ["a", "b", "c"] } }], carts: [] });
 
-    // One advance moves the cart; the trip object itself is unchanged, so only the cart is listed.
+    // One advance moves the cart. Phase 4: the trip's actual driving time (drivenSeconds) changes too,
+    // so the moving trip is listed with the cart.
     const moved = await step(() => advanceBy(live.app, 20), 4);
-    expect(moved).toEqual({ revision: 4, operation: "simulation.advanced", clockSeconds: 20, requests: [], trips: [], carts: [expect.objectContaining({ id: "CART-01", position: { kind: "at", locationId: "c" } })] });
+    expect(moved).toEqual({ revision: 4, operation: "simulation.advanced", clockSeconds: 20, requests: [], trips: [expect.objectContaining({ id: "TRIP-0001", status: "active", drivenSeconds: 20 })], carts: [expect.objectContaining({ id: "CART-01", position: { kind: "at", locationId: "c" } })] });
 
     const boarded = await step(() => act(live.app, id, "board"), 5);
     expect(boarded).toMatchObject({ operation: "ride.boarded", requests: [{ status: "on_board" }], trips: [{ stopIndex: 1 }], carts: [{ status: "occupied", passengerCount: 1 }] });

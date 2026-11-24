@@ -84,8 +84,9 @@ export const CartId = z.string().regex(/^CART-\d{2}$/, "Cart ids look like CART-
 /**
  * Cart operational states (Phase 1 Part 2, plus "assigned" from Part 3).
  * - idle:        in service, no passengers on board, not committed to anything else.
- * - assigned:    reserved for one trip with no passengers on board yet; may be driving to the pickup,
- *                or finishing its current path after a cancellation. Not available for other rides.
+ * - assigned:    reserved for one trip with no passengers on board (yet, or again on a shared trip whose
+ *                riders so far were dropped off before the next pickup); may be driving to a pickup, or
+ *                finishing its current path after a cancellation. Not available for other rides.
  * - occupied:    in service with at least one passenger on board.
  * - charging:    charging, or set aside to charge. Not available for rides.
  * - offline:     out of service (for example no driver). Not available.
@@ -190,12 +191,13 @@ export type FleetConfig = z.infer<typeof FleetConfig>;
 // ---------- Rides (shapes only) ----------
 
 /**
- * The rider's view of a ride (Part 3, solo rides).
+ * The rider's view of a ride (Part 3; shared rides from Phase 4 use the same statuses, per rider).
  * - requested: created and validated, no cart yet.
  * - assigned:  a cart was assigned by id; its trip is planned and has not started.
- * - arriving:  the trip started; the cart is driving to the pickup, or waiting there to board.
- * - on_board:  the passenger boarded; the cart is driving to the destination, or waiting there.
- * - completed: the passenger was dropped off.
+ * - arriving:  the trip started; the cart is on its way to this rider's pickup (on a shared trip it may
+ *              serve other riders' stops first), or waiting there to board.
+ * - on_board:  the passenger boarded; the cart is on its way to this rider's destination, or waiting there.
+ * - completed: this passenger was dropped off. On a shared trip the trip may still continue for others.
  * - cancelled: cancelled before boarding.
  */
 export const RideRequestStatus = z.enum([
@@ -249,12 +251,65 @@ export type TripLeg = z.infer<typeof TripLeg>;
 export const TripStatus = z.enum(["planned", "active", "cancelling", "completed", "cancelled"]);
 export type TripStatus = z.infer<typeof TripStatus>;
 
+/** Seconds: a finite number (never NaN or Infinity). */
+const FiniteSeconds = z.number().refine(Number.isFinite, "Must be a finite number of seconds");
+
+/**
+ * A rider's original solo baseline (Phase 4, D2). Written once, when the rider is assigned to a cart
+ * on its own or joins a shared trip, and never changed afterwards.
+ *
+ * Original solo PLANNED values (planned driving time, unrounded seconds, engine speed rule
+ * min(cart speed, path speed) on each path):
+ * - soloPickupSeconds: driving time from the solo cart's location to the rider's pickup.
+ * - soloRideSeconds:   driving time from the pickup to the destination at that cart's speed.
+ * - cartId:            the cart those two values were computed for (the cart solo dispatch would pick).
+ *
+ * Marks on the trip's ACTUAL-driving clock (`Trip.drivenSeconds`), so planned and driven time can be
+ * compared without the simulation clock (which also runs while a cart waits at a stop):
+ * - pickupMark:  trip.drivenSeconds when recorded + soloPickupSeconds.
+ * - dropOffMark: pickupMark + soloRideSeconds.
+ *
+ * For explanation only (never used in a delay calculation):
+ * - recordedAtClock: the simulation clock (seconds) when the baseline was recorded.
+ *
+ * A baseline is never estimated, defaulted or set to zero: a rider without one has no baseline, and a
+ * shared join that would affect that rider is refused.
+ */
+export const RiderBaseline = z.object({
+  soloPickupSeconds: FiniteSeconds.refine((n) => n >= 0, "Solo pickup time cannot be negative"),
+  soloRideSeconds: FiniteSeconds.refine((n) => n >= 0, "Solo ride time cannot be negative"),
+  pickupMark: FiniteSeconds,
+  dropOffMark: FiniteSeconds,
+  cartId: CartId,
+  recordedAtClock: FiniteSeconds.refine((n) => n >= 0, "Clock cannot be negative"),
+}).strict();
+export type RiderBaseline = z.infer<typeof RiderBaseline>;
+
+/**
+ * One rider on a trip (Phase 4): their own boarding and drop-off lifecycle, separate from the
+ * request's status and the trip's status.
+ * - waiting:     boarded false, droppedOff false, cancelled false.
+ * - on board:    boarded true, droppedOff false.
+ * - dropped off: boarded true, droppedOff true (that rider's ride is complete; the trip may continue).
+ * - cancelled:   cancelled true (only before boarding); the rider's stops were removed from the trip.
+ *   A trip cancelled as a whole (its only rider cancelled) keeps the Part 3 shape: stops kept,
+ *   cancelled false, and the trip itself is cancelling or cancelled.
+ */
+export const TripPassenger = z.object({
+  requestId: z.string().min(1),
+  boarded: z.boolean(),
+  droppedOff: z.boolean().default(false),
+  cancelled: z.boolean().default(false),
+  baseline: RiderBaseline.optional(),
+});
+export type TripPassenger = z.infer<typeof TripPassenger>;
+
 export const Trip = z.object({
   id: z.string().min(1),
   cartId: CartId,
   stops: z.array(TripStop),
-  /** The passenger list: which requests ride this trip and whether they have boarded. */
-  passengers: z.array(z.object({ requestId: z.string().min(1), boarded: z.boolean() })),
+  /** The passenger list, in the order riders were added: each rider's own lifecycle and baseline. */
+  passengers: z.array(TripPassenger),
   status: TripStatus,
   /** Index in `stops` of the next stop to handle. Equals stops.length once every stop is done. */
   stopIndex: z.number().int().min(0).default(0),
@@ -263,12 +318,18 @@ export const Trip = z.object({
    * the cart is finishing. Null when planned, completed or cancelled.
    */
   leg: TripLeg.nullable().default(null),
+  /**
+   * ACTUAL simulated driving time of this trip's cart since the trip was created, in seconds. Grows
+   * only inside `advance`, by the seconds the cart actually spent moving (same speed rule as planned
+   * times). Waiting at a stop adds nothing. Not a planned ETA, and not wall-clock waiting time.
+   */
+  drivenSeconds: FiniteSeconds.refine((n) => n >= 0, "Driven seconds cannot be negative").default(0),
 });
 export type Trip = z.infer<typeof Trip>;
 
 /**
- * The only fields a client may send to create a ride request (Phase 2). Any other field (ids, cart,
- * fare, status, timestamps, passengers, mode, priority) is rejected, never ignored: the engine and
+ * The only fields a client may send to create a ride request (Phase 2, plus the optional `mode` from
+ * Phase 4). Any other field (ids, cart, fare, status, timestamps, passengers, priority) is rejected, never ignored: the engine and
  * the server create those. Location ids are checked by the engine (createRequest), not here.
  */
 export const CreateRideRequestBody = z
@@ -276,6 +337,8 @@ export const CreateRideRequestBody = z
     studentId: z.string().min(1, "studentId is required"),
     pickupId: z.string().min(1, "pickupId is required"),
     destinationId: z.string().min(1, "destinationId is required"),
+    /** Phase 4: the student opts into a shared (Ghost) ride. Omitted means "solo". */
+    mode: z.enum(["solo", "shared"]).optional(),
   })
   .strict();
 export type CreateRideRequestBody = z.infer<typeof CreateRideRequestBody>;

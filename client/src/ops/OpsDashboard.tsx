@@ -13,6 +13,7 @@ import { CampusMap } from "../ui/CampusMap";
 import { LiveStatus } from "../student/LiveStatus";
 import { DetailsPanel, DispatchPanel, FleetTable, MetricsPanel, RidesTables, SimulationPanel, type Selected } from "./OpsPanels";
 import { simClock } from "./opsFormat";
+import { TapPointsPanel } from "./TapPointsPanel";
 
 /** What the map highlights for the current selection: a ride's pickup, destination, current leg and cart. */
 function mapFocus(data: StateSnapshot, selected: Selected) {
@@ -33,7 +34,7 @@ function mapFocus(data: StateSnapshot, selected: Selected) {
  * Operations Dashboard: fleet, requests, trips, explicit dispatch and simulation controls, details and
  * the campus map. Every figure comes from the one shared realtime store; nothing runs on its own.
  */
-export function OpsDashboard({ api: injectedApi, personas: injectedPersonas }: { api?: OpsApi; personas?: Persona[] }) {
+export function OpsDashboard({ api: injectedApi, personas: injectedPersonas, tapBaseUrl }: { api?: OpsApi; personas?: Persona[]; /** Tests only: the Tap-In base URL (undefined = ask the server). */ tapBaseUrl?: string | null }) {
   const campus = useCampus();
   const store = useRealtimeStore();
   const realtime = useRealtime();
@@ -112,6 +113,7 @@ export function OpsDashboard({ api: injectedApi, personas: injectedPersonas }: {
       </div>
       <FleetTable data={data} campus={campus} personas={personas} selected={selected} onSelect={setSelected} />
       <RidesTables data={data} campus={campus} personas={personas} selected={selected} onSelect={setSelected} />
+      <TapPointsPanel campus={campus} baseUrl={tapBaseUrl} />
     </>
   );
 }

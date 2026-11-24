@@ -3,8 +3,9 @@ import { Link } from "react-router-dom";
 import { PHASE_LABEL, TRACK_STEPS, canCancel, phaseDetail, sharedCancelNote, sharedRideLines, trackStepIndex, type RidePhase, type StudentRide } from "../lib/studentRides";
 import { Badge } from "../ui/Badge";
 import { Card } from "../ui/Card";
+import { arrivalState, passengerOf, showTapInEntry, tapPath } from "../lib/tapIn";
 import { FareLine } from "./FareInfo";
-import { locationName } from "./format";
+import { formatSimTime, locationName } from "./format";
 import { useStudent } from "./studentContext";
 
 const PHASE_TONE: Record<RidePhase, string> = {
@@ -117,6 +118,7 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
         )}
       </dl>
       <FareLine request={ride.request} />
+      <TapInLine ride={ride} />
 
       {cancel.step === "error" && (
         <p role="alert" className="rounded-tile bg-red-50 px-3 py-2 text-sm text-danger">
@@ -127,6 +129,11 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
         {showDetailsLink && (
           <Link to={`/student/rides/${encodeURIComponent(ride.request.id)}`} className="rounded-full bg-surface px-4 py-2 text-sm font-semibold text-ink">
             Ride details
+          </Link>
+        )}
+        {showTapInEntry(ride) && (
+          <Link to={tapPath(campus.id, ride.request.pickupId)} className="rounded-full bg-brand-tint px-4 py-2 text-sm font-semibold text-brand" data-testid="tap-entry">
+            I'm at my pickup
           </Link>
         )}
         {canCancel(ride) && cancel.step !== "confirm" && cancel.step !== "sending" && (
@@ -153,5 +160,29 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
         )}
       </div>
     </Card>
+  );
+}
+
+/**
+ * Phase 4 Tap-In on the ride card. A current arrival only when the record is at the CURRENT pickup and the
+ * rider is still waiting; otherwise the record is shown as history. Never says "boarded" or "verified".
+ */
+function TapInLine({ ride }: { ride: StudentRide }) {
+  const { campus } = useStudent();
+  const a = arrivalState(ride.request, passengerOf(ride.trip, ride.request.id));
+  if (!a) return null;
+  const where = locationName(campus, a.locationId);
+  if (a.kind === "current") {
+    return (
+      <p className="rounded-tile bg-brand-tint px-3 py-2 text-xs text-ink" data-testid="ride-tapin" data-arrival="current">
+        Tapped in at {where} · {formatSimTime(a.atMs)}. Wait here: your driver confirms boarding.
+      </p>
+    );
+  }
+  const why = !a.atCurrentPickup ? "not your current pickup" : ride.request.status === "cancelled" ? "this ride is cancelled" : "history only";
+  return (
+    <p className="rounded-tile bg-surface px-3 py-2 text-xs text-muted" data-testid="ride-tapin" data-arrival="history">
+      Earlier Tap-In at {where} · {formatSimTime(a.atMs)} ({why})
+    </p>
   );
 }

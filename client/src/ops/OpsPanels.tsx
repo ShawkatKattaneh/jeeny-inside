@@ -9,6 +9,7 @@ import type { DispatchResult, DispatchSelection, JoinCandidate } from "../lib/ri
 import { Card } from "../ui/Card";
 import { formatSimTime, locationName } from "../student/format";
 import { cartWhere, driverText, simClock, studentText } from "./opsFormat";
+import { opsTapInText } from "../lib/tapIn";
 
 export type Selected = { kind: "cart" | "request" | "trip"; id: string } | null;
 
@@ -359,6 +360,9 @@ export function DetailsPanel({ data, campus, personas, selected, onClear }: { da
       rows.push(["Request status", REQUEST_STATUS_TEXT[r.status]], ["Student", studentText(r.studentId, personas)], ["Pickup", locationName(campus, r.pickupId)], ["Destination", locationName(campus, r.destinationId)],
         ["Mode", r.mode], ["Fare", `${r.fareJod} JOD (simulated)`], ["Free loyalty ride", r.freeLoyaltyRide ? "Yes" : "No"], ["Trip", trip ? `${trip.id} (${TRIP_STATUS_TEXT[trip.status]}, ${trip.cartId})` : "None yet"],
         ["Created", formatSimTime(r.createdAt)], ["Updated", formatSimTime(r.updatedAt)], ["Dispatch", dispatchAvailability(r.status).canAsk ? "Awaiting dispatch evaluation" : (dispatchAvailability(r.status) as { reason: string }).reason]);
+      // Phase 4 Tap-In: read-only, never verified presence or boarding.
+      const tap = opsTapInText(r, trip?.passengers.find((p) => p.requestId === r.id) ?? null, (id) => locationName(campus, id));
+      if (tap) rows.push(["Tap-In", tap]);
     }
   } else {
     const t = data.trips.find((x) => x.id === selected.id);
@@ -377,6 +381,13 @@ export function DetailsPanel({ data, campus, personas, selected, onClear }: { da
           ? t.stops.map((s, i) => `${i + 1}. ${locationName(campus, s.locationId)}${s.board.length ? ` [pick up ${s.board.join(", ")}]` : ""}${s.alight.length ? ` [drop off ${s.alight.join(", ")}]` : ""}`).join("  ")
           : t.stops.map((s, i) => `${i + 1}. ${locationName(campus, s.locationId)}`).join("  ")], ["Next stop", t.stopIndex < t.stops.length ? locationName(campus, t.stops[t.stopIndex]!.locationId) : "All stops done"],
         ["Current leg", t.leg ? t.leg.locationIds.map((id) => locationName(campus, id)).join(" → ") : "None"]);
+      // Phase 4 Tap-In: one line per rider with a recorded check-in (read-only, not verified).
+      const taps = t.passengers.flatMap((p) => {
+        const r = data.requests.find((x) => x.id === p.requestId);
+        const text = r ? opsTapInText(r, p, (id) => locationName(campus, id)) : null;
+        return text ? [`${p.requestId}: ${text}`] : [];
+      });
+      if (taps.length) rows.push(["Tap-Ins", taps.join("; ")]);
     }
   }
   return (

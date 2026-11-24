@@ -6,6 +6,8 @@ import { PrimaryButton } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { formatJod, formatSimTime, locationName } from "../student/format";
 import { SharedTripCard } from "./SharedTripCard";
+import { arrivalState, passengerOf } from "../lib/tapIn";
+import { TapInBadge } from "./TapInBadge";
 
 const STEPS: { stage: DriverStage; label: string }[] = [
   { stage: "planned", label: "Assigned" },
@@ -82,7 +84,10 @@ function SoloTripCard({ view, campus, personas, data, actions }: {
           {request ? (passenger ? `${passenger.name} (${request.studentId})` : request.studentId) : "Not in the live state"}
         </dd>
         <dt className="text-muted">Pickup</dt>
-        <dd className="font-semibold">{request ? locationName(campus, request.pickupId) : "Unknown"}</dd>
+        <dd className="font-semibold">
+          {request ? locationName(campus, request.pickupId) : "Unknown"}
+          {request && <TapInBadge arrival={arrivalState(request, passengerOf(trip, request.id))} />}
+        </dd>
         <dt className="text-muted">Drop-off</dt>
         <dd className="font-semibold">{request ? locationName(campus, request.destinationId) : "Unknown"}</dd>
         {request && (
@@ -129,3 +134,4 @@ function SoloTripCard({ view, campus, personas, data, actions }: {
     </Card>
   );
 }
+

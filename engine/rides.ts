@@ -59,7 +59,13 @@ export type RideErrorCode =
   | "SOLO_BASELINE_UNAVAILABLE"
   | "RIDER_BASELINE_MISSING"
   | "ROUTE_METRIC_UNAVAILABLE"
-  | "DELAY_CAP_EXCEEDED";
+  | "DELAY_CAP_EXCEEDED"
+  // Phase 4 (Tap-In, engine/tapIn.ts): why a check-in at a pickup point was refused.
+  | "UNKNOWN_POINT"
+  | "POINT_NOT_SUPPORTED"
+  | "NOT_YOUR_RIDE"
+  | "TAP_IN_NOT_ALLOWED"
+  | "PICKUP_MISMATCH";
 
 export interface RideError {
   code: RideErrorCode;
@@ -73,7 +79,8 @@ export const fail = (code: RideErrorCode, message: string): { ok: false; error: 
 /** Trips that still hold their cart. */
 export const OPEN_TRIP_STATUSES: readonly TripStatus[] = ["planned", "active", "cancelling"];
 
-const nowMs = (s: RideState) => Math.round(s.clockSeconds * 1000);
+/** Server time for timestamps: simulated milliseconds since the state was created. */
+export const nowMs = (s: RideState) => Math.round(s.clockSeconds * 1000);
 const pad = (n: number) => String(n).padStart(4, "0");
 
 /** Start a ride state for one campus and its fleet. Fails if the fleet belongs to another campus or is inconsistent. */
@@ -766,6 +773,9 @@ export function checkRideInvariants(state: RideState): string[] {
       tripByRequest.set(p.requestId, t);
       if (!state.requests.has(p.requestId)) problems.push(`${t.id} carries unknown request ${p.requestId}`);
       if (p.droppedOff && !p.boarded) problems.push(`${t.id}: ${p.requestId} was dropped off without boarding`);
+      // Tap-In (Phase 4) is history: it must name a real campus location. It is deliberately not tied to the
+      // current pickup here (the match is enforced when it is written), so the record is never rewritten.
+      if (p.tappedIn && !state.campus.locations.some((l) => l.id === p.tappedIn!.locationId)) problems.push(`${t.id}: ${p.requestId} tapped in at unknown location "${p.tappedIn.locationId}"`);
       if (p.cancelled && p.boarded) problems.push(`${t.id}: ${p.requestId} is cancelled after boarding`);
       if (p.baseline) {
         const b = p.baseline;

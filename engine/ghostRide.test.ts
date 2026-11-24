@@ -60,7 +60,7 @@ function twoRiders(carts: CartInput[] = [cartAt("CART-01", "a"), cartAt("CART-02
 // ---------------------------------------------------------------------------------------------------
 describe("Stage 1: schema and generalised invariants", () => {
   it("adds the approved baseline fields and drivenSeconds, and no delay counter", () => {
-    expect(Object.keys(TripPassenger.shape)).toEqual(["requestId", "boarded", "droppedOff", "cancelled", "baseline"]);
+    expect(Object.keys(TripPassenger.shape)).toEqual(["requestId", "boarded", "droppedOff", "cancelled", "baseline", "tappedIn"]); // Phase 4 Tap-In adds tappedIn
     expect(Object.keys(RiderBaseline.shape)).toEqual(["soloPickupSeconds", "soloRideSeconds", "pickupMark", "dropOffMark", "cartId", "recordedAtClock"]);
     expect(Object.keys(Trip.shape)).toContain("drivenSeconds");
     const all = JSON.stringify([Object.keys(Trip.shape), Object.keys(TripPassenger.shape), Object.keys(RiderBaseline.shape)]);

@@ -1,5 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import { PHASE_LABEL } from "../lib/studentRides";
+import { passengerOf } from "../lib/tapIn";
 import { formatJod, formatSimTime, locationName } from "./format";
 import { RideStatusCard } from "./RideStatusCard";
 import { StudentMap } from "./StudentMap";
@@ -26,6 +27,7 @@ export function RideDetailView() {
   }
 
   const r = ride.request;
+  const tapped = passengerOf(ride.trip, r.id)?.tappedIn;
   const rows: [string, string][] = [
     ["Request", r.id],
     ["Status", `${PHASE_LABEL[ride.phase]} (server status: ${r.status})`],
@@ -38,6 +40,8 @@ export function RideDetailView() {
     ["Fare", `${r.freeLoyaltyRide ? "Free loyalty ride" : formatJod(r.fareJod)} (simulated, no payment taken)`],
     ["Requested", formatSimTime(r.createdAt)],
     ["Last update", formatSimTime(r.updatedAt)],
+    // Phase 4 Tap-In: the recorded check-in (history; never boarding, never verified presence).
+    ...(tapped ? [["Tap-In", `${locationName(campus, tapped.locationId)} at ${formatSimTime(tapped.atMs)} (check-in only, not verified)`] as [string, string]] : []),
   ];
 
   return (

@@ -128,6 +128,37 @@ Pick the operator persona (Hadi) on the start screen to open `/ops`. It is a dem
 - **Map:** every cart at its simulated position, and for the selected ride its pickup, destination and current leg.
 - Same single realtime connection pattern as the Student App and Driver Mode; REST answers are never written into the live state.
 
+### Tap-In with NFC and QR (Phase 4)
+
+A student checks in at their assigned pickup point by tapping an NFC tag or scanning a QR code. Both hold the **same plain URL**:
+
+```
+http://<public host>:<port>/tap/<campus id>/<location id>      e.g. http://<public host>:3000/tap/wadi-cedar/library
+```
+
+The phone's own NFC reader or camera opens it in the browser, on the `/tap` confirmation screen. The student confirms explicitly, and the server records the Tap-In (`POST /api/ride-requests/:requestId/tap-in`, body exactly `{ studentId, campusId, pointId }`). The student app also has an "I'm at my pickup" button on a waiting ride, which opens the same screen.
+
+**What a Tap-In is:** a write-once check-in record (`tappedIn { locationId, atMs }`, server simulation time) on the rider. It is **not boarding**: the driver still boards the rider with their own button, and a Tap-In never changes the ride, the cart, the stops, fares or loyalty. It proves nothing about physical presence or identity: the URLs are public, the student is a demo persona, and there is no login. The driver sees "Tapped in · not boarded"; Operations sees "Tap-In recorded <time> (not verified)".
+
+**Rules (enforced by the server, in this order):** the request exists (404 `UNKNOWN_REQUEST`); the campus is this campus and the point is one of its locations (400 `UNKNOWN_POINT`); the point is a stop (400 `POINT_NOT_SUPPORTED`); `studentId` matches the ride (409 `NOT_YOUR_RIDE`, a consistency check, not authentication); then, if a record already exists, the same point returns the original record with `alreadyRecorded: true` (in any state, even after boarding, drop-off or cancellation) and another point is 409 `PICKUP_MISMATCH`; otherwise the ride must be dispatched and the rider waiting (409 `TAP_IN_NOT_ALLOWED`) and the point must be the assigned pickup (409 `PICKUP_MISMATCH`). A bad body is 400 `INVALID_REQUEST`. Only the first successful Tap-In creates a revision (`ride.tapped_in`); replays and refusals create none.
+
+**Set the public host.** Tap URLs contain the laptop's address, so the server must be told which one to use. Nothing is guessed and no address is built into the code:
+
+```bash
+npm start -- --public-host=<the "On phones" address>     # for example the hotspot address, without http:// or a port
+PUBLIC_HOST=<address> npm start                            # the same, as an environment variable
+```
+
+The value must be a bare hostname or IPv4 address; the server refuses to start on anything else. Operations → **Tap Points** lists every pickup point (every location where carts can stop) with its URL, a Copy button and a QR code. Without a public host it shows no URLs.
+
+**Changing the host means rewriting every NFC tag and reprinting every QR code**, because the old address is stored in them. Pick an address that stays the same for the demo (for example the laptop's own hotspot address) before writing tags.
+
+**Preparing tags and codes.** Write each URL to an NFC sticker (for example NTAG213/215) as a plain URL record with any NFC writing app, and print the same URL's QR code from Tap Points next to it.
+
+**Stable location ids.** A materially changed physical pickup point must receive a new `locationId`. An existing id must never be silently reassigned to a materially different physical location, because tags, printed codes and recorded Tap-Ins refer to it. This is a convention for whoever edits campus files; the code does not enforce it.
+
+**Limits of this demo.** The demo runs over plain HTTP on the hotspot. Browser-based NFC reading (Web NFC, Chrome on Android only) and in-app camera scanning both need HTTPS, so neither is used: the phone's own NFC reader and camera open the URL instead. Reading tags with the phone's NFC (Android with NFC on and the screen unlocked; iPhone XS or later) and scanning the printed codes must be tested on the team's phones before the demo. Every socket still receives the whole ride state, including Tap-In records.
+
 ## Structure
 
 One repository, one package, four folders with fixed boundaries (Plan section 5):

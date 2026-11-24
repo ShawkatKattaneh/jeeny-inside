@@ -5,6 +5,8 @@ import { ACTION_LABEL, STAGE_LABEL, type ActionBinding, type CartTrip, type Ride
 import { PrimaryButton } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { locationName } from "../student/format";
+import { arrivalState, passengerOf } from "../lib/tapIn";
+import { TapInBadge } from "./TapInBadge";
 
 const RIDER_TEXT: Record<RiderState, string> = {
   waiting: "Waiting for pickup",
@@ -93,7 +95,10 @@ export function SharedTripCard({ view, shared, campus, personas, data, actions }
                     : r.request ? `${locationName(campus, r.request.pickupId)} → ${locationName(campus, r.request.destinationId)}` : "Not in the live state"}
                 </span>
               </span>
-              <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${RIDER_TONE[r.state]}`} data-testid={`rider-state-${r.requestId}`}>{RIDER_TEXT[r.state]}</span>
+              <span className="flex items-center">
+                {r.request && <TapInBadge arrival={arrivalState(r.request, passengerOf(trip, r.requestId))} />}
+                <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-bold ${RIDER_TONE[r.state]}`} data-testid={`rider-state-${r.requestId}`}>{RIDER_TEXT[r.state]}</span>
+              </span>
             </li>
           ))}
         </ul>

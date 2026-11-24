@@ -4,7 +4,7 @@
  * `issues` for payload validation. This keeps the Phase 0 `{ error }` shape and adds a stable code.
  * Internal errors never carry stack traces or engine state.
  */
-import type { FastifyError, FastifyInstance } from "fastify";
+import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ZodError } from "zod";
 import type { RideError } from "../engine/rides.js";
 import type { DispatchError, DispatchErrorCode, DispatchSelection } from "../engine/dispatch.js";
@@ -55,6 +55,12 @@ const STATUS_BY_CODE: Record<DispatchErrorCode, number> = {
   RIDER_BASELINE_MISSING: 409,
   ROUTE_METRIC_UNAVAILABLE: 409,
   DELAY_CAP_EXCEEDED: 409,
+  // Phase 4 Tap-In (approved contract): a bad point in the body is 400; a refusal by ride state is 409.
+  UNKNOWN_POINT: 400,
+  POINT_NOT_SUPPORTED: 400,
+  NOT_YOUR_RIDE: 409,
+  TAP_IN_NOT_ALLOWED: 409,
+  PICKUP_MISMATCH: 409,
   INVALID_MOVEMENT: 500,
   INCONSISTENT_STATE: 500,
 };
@@ -87,13 +93,30 @@ export function validationErrorBody(err: ZodError, what: string): ApiErrorBody {
  * same body shape. Client errors keep Fastify's status; anything else is a 500 with a generic message.
  */
 export function registerErrorHandler(app: FastifyInstance): void {
-  app.setErrorHandler((err: FastifyError, req, reply) => {
-    const status = typeof err.statusCode === "number" && err.statusCode >= 400 && err.statusCode < 500 ? err.statusCode : 500;
-    if (status >= 500) {
-      // Details stay in the server console; the response never carries them.
-      console.error(`[api] ${req.method} ${req.url} failed:`, err);
-      return reply.code(500).send(INTERNAL);
-    }
-    return reply.code(status).send({ error: err.message, code: err.code ?? "BAD_REQUEST" } satisfies ApiErrorBody);
-  });
+  app.setErrorHandler(sendFastifyError);
+}
+
+/** The app-wide handler's response for one Fastify-level error (shared so a route can fall back to it). */
+export function sendFastifyError(err: FastifyError, req: FastifyRequest, reply: FastifyReply) {
+  const status = typeof err.statusCode === "number" && err.statusCode >= 400 && err.statusCode < 500 ? err.statusCode : 500;
+  if (status >= 500) {
+    // Details stay in the server console; the response never carries them.
+    console.error(`[api] ${req.method} ${req.url} failed:`, err);
+    return reply.code(500).send(INTERNAL);
+  }
+  return reply.code(status).send({ error: err.message, code: err.code ?? "BAD_REQUEST" } satisfies ApiErrorBody);
+}
+
+/** Fastify's codes for a JSON content type whose body is not valid JSON (malformed, or empty). */
+const MALFORMED_JSON_CODES = new Set(["FST_ERR_CTP_INVALID_JSON_BODY", "FST_ERR_CTP_EMPTY_JSON_BODY"]);
+
+/**
+ * Phase 4 Tap-In route only (approved audit fix F1): a malformed JSON body is the contract's
+ * 400 INVALID_REQUEST. Every other error goes to the app-wide handler unchanged, and no other route uses this.
+ */
+export function tapInErrorHandler(err: FastifyError, req: FastifyRequest, reply: FastifyReply) {
+  if (err.code && MALFORMED_JSON_CODES.has(err.code)) {
+    return reply.code(400).send({ error: "Invalid Tap-In: the body is not valid JSON (it takes exactly studentId, campusId and pointId)", code: "INVALID_REQUEST" } satisfies ApiErrorBody);
+  }
+  return sendFastifyError(err, req, reply);
 }

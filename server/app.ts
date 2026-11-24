@@ -2,17 +2,18 @@ import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import fastifyStatic from "@fastify/static";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { AdvanceSimulationBody, CreateRideRequestBody, EmptyActionBody, type CampusConfig, type StateOperation, type Trip } from "../shared/schemas.js";
+import { AdvanceSimulationBody, CreateRideRequestBody, EmptyActionBody, TapInBody, type CampusConfig, type StateOperation, type Trip } from "../shared/schemas.js";
 import { PERSONAS } from "../shared/personas.js";
 import { SETTINGS, INDEPENDENCE_NOTE } from "../shared/settings.js";
 import type { Fleet } from "../engine/fleet.js";
 import { listCarts, getCart } from "../engine/fleet.js";
 import { board, cancel, createRequest, dropOff, fail, getRequest, startTrip, tripForRequest, type RideError, type RideResult, type RideState } from "../engine/rides.js";
 import { dispatchRequest, type DispatchError } from "../engine/dispatch.js";
+import { tapIn } from "../engine/tapIn.js";
 import { advance } from "../engine/simulation.js";
 import { createAppStore, type AppStore } from "./state.js";
 import { attachRealtime, snapshotOf } from "./realtime.js";
-import { registerErrorHandler, rideErrorResponse, validationErrorBody } from "./errors.js";
+import { registerErrorHandler, rideErrorResponse, tapInErrorHandler, validationErrorBody } from "./errors.js";
 
 /** After a lifecycle operation: the ride's request, its trip and that trip's cart, from the new state. */
 function withRide(requestId: string, r: RideResult<{ trip: Readonly<Trip> | null }>) {
@@ -50,6 +51,11 @@ export type AppOptions = (
   /** Serve the built client from this folder (production / demo mode). */
   clientDir?: string;
   logger?: boolean;
+  /**
+   * Phase 4 Tap-In: the public base URL that NFC tags and QR codes open ("http://<public host>:<port>"),
+   * from --public-host= / PUBLIC_HOST (server/index.ts). null when no host is configured.
+   */
+  tapBaseUrl?: string | null;
 };
 
 /**
@@ -62,7 +68,7 @@ export type AppOptions = (
  * Realtime: Socket.IO shares this app's HTTP server (server/realtime.ts). SQLite arrives with the phase that needs it.
  */
 export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
-  const { clientDir, logger = false } = options;
+  const { clientDir, logger = false, tapBaseUrl = null } = options;
   // Throws (and the server does not start) if the engine refuses this campus and fleet.
   const store: AppStore = options.store ?? createAppStore(options.campus, options.fleet);
   const app = Fastify({ logger });
@@ -73,7 +79,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   app.get("/api/health", async () => ({ ok: true, campus: store.read((s) => s.campus.id), time: Date.now() }));
   app.get("/api/campus", async () => store.read((s) => s.campus));
   app.get("/api/personas", async () => PERSONAS);
-  app.get("/api/about", async () => ({ note: INDEPENDENCE_NOTE, settings: SETTINGS }));
+  app.get("/api/about", async () => ({ note: INDEPENDENCE_NOTE, settings: SETTINGS, tapBaseUrl }));
 
   /** The whole ride state with its revision: the authoritative resync point for realtime clients. */
   app.get("/api/snapshot", async () => store.read(snapshotOf));
@@ -160,6 +166,24 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   action("board", "ride.boarded", (s, id) => board(s, id));
   action("drop-off", "ride.dropped_off", (s, id) => dropOff(s, id));
   action("cancel", "ride.cancelled", (s, id) => cancel(s, id));
+
+  /**
+   * Phase 4 Tap-In: record the rider's check-in at their assigned pickup point (engine/tapIn.ts has the
+   * approved check order). Arrival only: never boards, never changes the request, cart or stops.
+   * A replay of an existing record returns it with alreadyRecorded: true and commits nothing, so it
+   * creates no revision and no update; only the first successful Tap-In commits ride.tapped_in.
+   */
+  // errorHandler: malformed JSON on this route only is 400 INVALID_REQUEST (audit fix F1); other errors as app-wide.
+  app.post<RideParams>("/api/ride-requests/:requestId/tap-in", { errorHandler: tapInErrorHandler }, async (req, reply) => {
+    const body = TapInBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send(validationErrorBody(body.error, "Tap-In (it takes exactly studentId, campusId and pointId)"));
+    const id = req.params.requestId;
+    const result = store.apply((s) => {
+      const r = tapIn(s, id, body.data);
+      return r.ok ? { ...r, request: r.state.requests.get(id)!, cart: r.state.fleet.carts.get(r.trip.cartId)! } : r;
+    }, "ride.tapped_in");
+    return sendResult(reply, result, (r) => ({ request: r.request, trip: r.trip, cart: r.cart, tapIn: r.tapIn, alreadyRecorded: r.alreadyRecorded }));
+  });
 
   // ---------- Simulation (manual demo clock) ----------
 

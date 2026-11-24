@@ -301,6 +301,62 @@ export type AdvanceSimulationBody = z.infer<typeof AdvanceSimulationBody>;
 /** Ride lifecycle actions (dispatch, start, board, drop-off, cancel) take no client fields at all. */
 export const EmptyActionBody = z.object({}).strict().optional();
 
+// ---------- Realtime (Phase 2 Prompt 3) ----------
+
+/**
+ * The committed operation behind a revision. One successful REST call = one operation = one revision.
+ * "state.changed" is only used by server-internal changes made without a REST route (tests); no
+ * REST route produces it.
+ */
+export const StateOperation = z.enum([
+  "ride_request.created",
+  "ride.dispatched",
+  "ride.started",
+  "ride.boarded",
+  "ride.dropped_off",
+  "ride.cancelled",
+  "simulation.advanced",
+  "state.changed",
+]);
+export type StateOperation = z.infer<typeof StateOperation>;
+
+/** Revision of the server's in-memory state: 0 at startup, +1 per committed operation. */
+const Revision = z.number().int().min(0);
+
+/**
+ * Socket.IO event "state:snapshot", and GET /api/snapshot: the whole ride state at one revision.
+ * Sent on every (re)connection and on request. Campus data stays on GET /api/campus.
+ */
+export const StateSnapshot = z
+  .object({
+    revision: Revision,
+    campusId: z.string().min(1),
+    /** Simulated seconds since the server started. */
+    clockSeconds: z.number().min(0),
+    requests: z.array(RideRequest),
+    trips: z.array(Trip),
+    carts: z.array(Cart),
+  })
+  .strict();
+export type StateSnapshot = z.infer<typeof StateSnapshot>;
+
+/**
+ * Socket.IO event "state:update": exactly one per committed operation. Lists every request, trip and
+ * cart that the operation changed, each in full as it is after the commit (never an in-between
+ * state), plus the clock. Apply it only if `revision` is exactly the last revision you hold + 1.
+ */
+export const StateUpdate = z
+  .object({
+    revision: Revision.min(1),
+    operation: StateOperation,
+    clockSeconds: z.number().min(0),
+    requests: z.array(RideRequest),
+    trips: z.array(Trip),
+    carts: z.array(Cart),
+  })
+  .strict();
+export type StateUpdate = z.infer<typeof StateUpdate>;
+
 // ---------- Demo personas (no real login) ----------
 
 export const Role = z.enum(["student", "driver", "operator"]);

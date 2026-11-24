@@ -57,6 +57,7 @@ The server starts with the carts in `campus/fleets/<campus id>.json` (sample dat
 | POST | `/api/ride-requests/:requestId/board` | Boards the passenger; only once the cart is at the pickup |
 | POST | `/api/ride-requests/:requestId/drop-off` | Drops the passenger off; only once the cart is at the destination |
 | POST | `/api/ride-requests/:requestId/cancel` | Cancels before boarding. A cart caught mid-path finishes that one path first and stays unavailable until then |
+| GET | `/api/snapshot` | The whole ride state with its `revision` (same shape as the realtime snapshot below) |
 | POST | `/api/simulation/advance` | Body `{ seconds }`, more than 0 and at most 600. Moves every active trip at once. 200 `{ clockSeconds, carts, trips }` |
 
 The ride actions take no body fields (an empty body or `{}`); anything else is refused with 400, so a client can never choose a cart or set a status, position or passenger count.
@@ -67,6 +68,33 @@ Errors are `{ error, code }` (plus `issues` for an invalid body): 400 invalid in
 
 **Simulated time** moves only when `/api/simulation/advance` is called: a manual demo control, with no timers or real-time movement. Advancing never boards or drops anyone off. All ride state lives in memory and starts again from the campus and fleet files when the server restarts.
 
+### Realtime updates (Socket.IO)
+
+Socket.IO runs on the same HTTP server and port as the REST API (`server/realtime.ts`, attached in `buildApp` to Fastify's own server). There is no second server. In development, Vite proxies `/socket.io` to the API server, WebSocket included. Closing the app (`app.close()`) first stops publishing, disconnects every socket and closes Socket.IO's engine, then Fastify closes the HTTP server. Each app instance has its own sockets, revision and state.
+
+Sockets only listen. REST is the only way to change anything, and the server handles a single client event: a request for a fresh snapshot.
+
+| Event | Direction | Payload |
+|---|---|---|
+| `state:snapshot` | server to client, first thing after every connection | `StateSnapshot`: `{ revision, campusId, clockSeconds, requests, trips, carts }`, the whole ride state at that revision |
+| `state:update` | server to every connected client, once per committed operation | `StateUpdate`: `{ revision, operation, clockSeconds, requests, trips, carts }`, listing every request, trip and cart the operation changed, each in full as it is after the commit |
+| `state:snapshot:request` | client to server, with an acknowledgement callback | The acknowledgement carries a fresh `StateSnapshot` |
+
+Schemas are in `shared/schemas.ts`; event names and `classifyRevision` are in `shared/realtime.ts`. `operation` is one of `ride_request.created`, `ride.dispatched`, `ride.started`, `ride.boarded`, `ride.dropped_off`, `ride.cancelled` or `simulation.advanced`. A cancelled ride's mid-path cleanup finishes inside a `simulation.advanced` update, which shows the trip `cancelled` and the cart `idle`.
+
+**Revision.** The server keeps a counter per running instance: 0 at startup, +1 for each committed operation. Each successful REST call that changes state is one operation and sends one update; a multi-cart advance is still one revision. Rejected or failed calls change nothing, send nothing and do not use up a number. An advance with nothing moving still moves the clock, so it counts as an operation. Updates leave the server in revision order. A snapshot's revision is exactly the state it shows, and the first snapshot can't race an update: commits and the connection handler both run on Node's single thread, so every later change reaches the client after its snapshot.
+
+**Client rule.** Hold the revision of the last snapshot or update you applied. For each update, `classifyRevision(held, update.revision)` says:
+- `apply`: it is the next revision.
+- `stale`: ignore it, you already have it.
+- `gap`: something was missed. Don't apply it; ask for a fresh snapshot with `state:snapshot:request` or `GET /api/snapshot`.
+
+After a reconnect the server sends a fresh snapshot anyway.
+
+**Delivery is best effort.** Socket.IO does not store or replay events, so a client that was disconnected misses them and must resync from a snapshot. A committed change is never rolled back because a client didn't receive it. The REST snapshot is always the authority; socket updates are notifications.
+
+**Not included yet:** no authentication or roles (anyone who can reach the port can listen, and there are no CORS options because the demo serves the app and the socket from one origin), no persistence (a restart starts again at revision 0 from the campus and fleet files), and no Student, Driver or Ops screens use the socket yet.
+
 ## Structure
 
 One repository, one package, four folders with fixed boundaries (Plan section 5):
@@ -75,7 +103,7 @@ One repository, one package, four folders with fixed boundaries (Plan section 5)
 campus/      Campus config files (fictional until the university is chosen) and fleets/ starting carts per campus
 shared/      Zod schemas and types used by every side, approved settings, demo personas
 engine/      Pure TypeScript logic (no network, database or timers): campus graph, shortest route, ETA
-server/      Fastify: REST endpoints, campus and fleet loading, the one in-memory ride state, serves the built app in demo mode
+server/      Fastify: REST endpoints, Socket.IO updates, campus and fleet loading, the one in-memory ride state, serves the built app in demo mode
 client/      React + Vite + Tailwind web app
   src/ui/      Design tokens v0 components: brand lockup, pill and icon buttons, badges, campus map
   src/routes/  Persona picker, /student, /driver, /ops

@@ -11,13 +11,21 @@
  *   request can run between reading the current state and replacing it: updates cannot interleave
  *   or be lost, and no lock or queue is needed. Keep it that way: never await inside an operation.
  *
+ * Revision: a counter per store, starting at 0, that goes up by exactly 1 each time `apply` replaces
+ * the state. Failed operations, operations that throw, and operations that hand back the very same
+ * state change nothing and do not move it. `read` sees the state and its revision together.
+ *
+ * Commit listeners (`onCommit`) run synchronously right after the new state and revision are stored,
+ * in commit order. They are told about a commit; they cannot undo it. A listener that throws is
+ * logged and ignored, so delivery problems (for example Socket.IO) never roll back a committed state.
+ *
  * The state lives in memory only: it is not saved anywhere and starts again from the campus and
  * fleet files whenever the server process restarts.
  *
  * Each buildApp call creates its own store, so tests get isolated instances; production startup
  * (server/index.ts) calls buildApp once, so normal operation has exactly one store.
  */
-import type { CampusConfig } from "../shared/schemas.js";
+import type { CampusConfig, StateOperation } from "../shared/schemas.js";
 import type { Fleet } from "../engine/fleet.js";
 import { createRideState, type RideState } from "../engine/rides.js";
 
@@ -27,11 +35,24 @@ export type OperationResult = { ok: true; state: RideState } | { ok: false; erro
 /** The result of a write: the operation's own fields (copied), with the internal state removed. */
 export type ApplyResult<R> = R extends { ok: true; state: RideState } ? Omit<R, "state"> : R;
 
+/** A committed state change, as told to commit listeners (server-internal; never sent as is). */
+export interface Commit {
+  revision: number;
+  operation: StateOperation;
+  previous: RideState;
+  state: RideState;
+}
+
 export interface AppStore {
-  /** Run a read-only selector on the current state and return a deep copy of what it selects. */
-  read<T>(select: (state: RideState) => T): T;
-  /** Run one engine operation; the stored state is replaced only if it succeeds. */
-  apply<R extends OperationResult>(op: (state: RideState) => R): ApplyResult<R>;
+  /** Run a read-only selector on the current state (and its revision) and return a deep copy of what it selects. */
+  read<T>(select: (state: RideState, revision: number) => T): T;
+  /**
+   * Run one engine operation; the stored state is replaced only if it succeeds, and then the
+   * revision goes up by 1 and commit listeners run. `operation` names the change for listeners.
+   */
+  apply<R extends OperationResult>(op: (state: RideState) => R, operation?: StateOperation): ApplyResult<R>;
+  /** Be told about every later commit, in order. Returns a function that stops it. */
+  onCommit(listener: (commit: Commit) => void): () => void;
 }
 
 function deepFreeze<T>(value: T): T {
@@ -52,17 +73,35 @@ export function createAppStore(campus: CampusConfig, fleet: Fleet): AppStore {
   const created = createRideState(deepFreeze(structuredClone(campus)), fleet);
   if (!created.ok) throw new Error(`Could not start the ride engine: ${created.error.message}`);
   let current: RideState = created.state;
+  let revision = 0;
+  const listeners = new Set<(commit: Commit) => void>();
 
   return Object.freeze({
-    read<T>(select: (state: RideState) => T): T {
-      return structuredClone(select(current));
+    read<T>(select: (state: RideState, revision: number) => T): T {
+      return structuredClone(select(current, revision));
     },
-    apply<R extends OperationResult>(op: (state: RideState) => R): ApplyResult<R> {
+    apply<R extends OperationResult>(op: (state: RideState) => R, operation: StateOperation = "state.changed"): ApplyResult<R> {
       const result = op(current);
       if (!result.ok) return { ok: false, error: structuredClone(result.error) } as ApplyResult<R>;
-      current = result.state;
-      const { ok: _ok, state: _internal, ...extra } = result as { ok: true; state: RideState };
-      return { ok: true, ...structuredClone(extra) } as ApplyResult<R>;
+      const { ok: _ok, state: next, ...extra } = result as { ok: true; state: RideState };
+      const reply = { ok: true, ...structuredClone(extra) } as ApplyResult<R>;
+      if (next === current) return reply; // no change: no new revision, nothing to tell
+      const previous = current;
+      current = next;
+      revision += 1;
+      const commit: Commit = { revision, operation, previous, state: next };
+      for (const listener of [...listeners]) {
+        try {
+          listener(commit);
+        } catch (err) {
+          console.error(`[state] a commit listener failed at revision ${revision}; the state stays committed:`, err);
+        }
+      }
+      return reply;
+    },
+    onCommit(listener: (commit: Commit) => void): () => void {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
     },
   });
 }

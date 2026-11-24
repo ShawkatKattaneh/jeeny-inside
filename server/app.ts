@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import fastifyStatic from "@fastify/static";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { AdvanceSimulationBody, CreateRideRequestBody, EmptyActionBody, type CampusConfig, type Trip } from "../shared/schemas.js";
+import { AdvanceSimulationBody, CreateRideRequestBody, EmptyActionBody, type CampusConfig, type StateOperation, type Trip } from "../shared/schemas.js";
 import { PERSONAS } from "../shared/personas.js";
 import { SETTINGS, INDEPENDENCE_NOTE } from "../shared/settings.js";
 import type { Fleet } from "../engine/fleet.js";
@@ -11,6 +11,7 @@ import { board, cancel, createRequest, dropOff, fail, getRequest, startTrip, tri
 import { dispatchRequest, type DispatchError } from "../engine/dispatch.js";
 import { advance } from "../engine/simulation.js";
 import { createAppStore, type AppStore } from "./state.js";
+import { attachRealtime, snapshotOf } from "./realtime.js";
 import { registerErrorHandler, rideErrorResponse, validationErrorBody } from "./errors.js";
 
 /** After a lifecycle operation: the ride's request, its trip and that trip's cart, from the new state. */
@@ -58,7 +59,7 @@ export type AppOptions = (
  * engine operations through the store, and map engine errors (server/errors.ts).
  * Dispatch is explicit (one request per call) and simulated time moves only when a client calls
  * /api/simulation/advance: there are no timers or background loops. State is in memory only.
- * Socket.IO and SQLite arrive with the phases that need them.
+ * Realtime: Socket.IO shares this app's HTTP server (server/realtime.ts). SQLite arrives with the phase that needs it.
  */
 export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   const { clientDir, logger = false } = options;
@@ -66,11 +67,16 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   const store: AppStore = options.store ?? createAppStore(options.campus, options.fleet);
   const app = Fastify({ logger });
   registerErrorHandler(app);
+  // Socket.IO on this app's own HTTP server: pushes one "state:update" per committed operation.
+  attachRealtime(app, store);
 
   app.get("/api/health", async () => ({ ok: true, campus: store.read((s) => s.campus.id), time: Date.now() }));
   app.get("/api/campus", async () => store.read((s) => s.campus));
   app.get("/api/personas", async () => PERSONAS);
   app.get("/api/about", async () => ({ note: INDEPENDENCE_NOTE, settings: SETTINGS }));
+
+  /** The whole ride state with its revision: the authoritative resync point for realtime clients. */
+  app.get("/api/snapshot", async () => store.read(snapshotOf));
 
   // ---------- Fleet (read-only) ----------
 
@@ -90,7 +96,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   app.post("/api/ride-requests", async (req, reply) => {
     const body = CreateRideRequestBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send(validationErrorBody(body.error, "ride request"));
-    const result = store.apply((s) => createRequest(s, body.data));
+    const result = store.apply((s) => createRequest(s, body.data), "ride_request.created");
     if (!result.ok) {
       const { status, body: err } = rideErrorResponse(result.error);
       return reply.code(status).send(err);
@@ -127,13 +133,14 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   type RideParams = { Params: { requestId: string } };
   const action = (
     path: string,
+    operation: StateOperation,
     op: (s: RideState, requestId: string) => RideResult<{ trip: Readonly<Trip> | null }>,
   ) =>
     app.post<RideParams>(`/api/ride-requests/:requestId/${path}`, async (req, reply) => {
       const body = EmptyActionBody.safeParse(req.body);
       if (!body.success) return reply.code(400).send(validationErrorBody(body.error, `${path} call (it takes no fields)`));
       const id = req.params.requestId;
-      const result = store.apply((s) => withRide(id, op(s, id)));
+      const result = store.apply((s) => withRide(id, op(s, id)), operation);
       return sendResult(reply, result, (r) => ({ request: r.request, trip: r.trip, cart: r.cart }));
     });
 
@@ -145,14 +152,14 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     const result = store.apply((s) => {
       const r = dispatchRequest(s, id);
       return r.ok ? { ...r, request: r.state.requests.get(id)!, cart: r.state.fleet.carts.get(r.trip.cartId)! } : r;
-    });
+    }, "ride.dispatched");
     return sendResult(reply, result, (r) => ({ request: r.request, trip: r.trip, cart: r.cart, selection: r.selection }));
   });
 
-  action("start", (s, id) => startTrip(s, id));
-  action("board", (s, id) => board(s, id));
-  action("drop-off", (s, id) => dropOff(s, id));
-  action("cancel", (s, id) => cancel(s, id));
+  action("start", "ride.started", (s, id) => startTrip(s, id));
+  action("board", "ride.boarded", (s, id) => board(s, id));
+  action("drop-off", "ride.dropped_off", (s, id) => dropOff(s, id));
+  action("cancel", "ride.cancelled", (s, id) => cancel(s, id));
 
   // ---------- Simulation (manual demo clock) ----------
 
@@ -169,7 +176,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
       const r = advance(s, body.data.seconds);
       if (!r.ok) return r;
       return { ...r, clockSeconds: r.state.clockSeconds, carts: listCarts(r.state.fleet), trips: moving.map((id) => r.state.trips.get(id)!) };
-    });
+    }, "simulation.advanced");
     return sendResult(reply, result, (r) => ({ clockSeconds: r.clockSeconds, carts: r.carts, trips: r.trips }));
   });
 

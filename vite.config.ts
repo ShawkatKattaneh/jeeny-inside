@@ -10,6 +10,10 @@ export default defineConfig({
     host: true, // reachable from phones on the same hotspot / Wi-Fi
     port: 5173,
     strictPort: true,
-    proxy: { "/api": "http://localhost:3001" },
+    proxy: {
+      "/api": "http://localhost:3001",
+      // Realtime updates (Socket.IO, including its WebSocket upgrade) go to the same API server.
+      "/socket.io": { target: "http://localhost:3001", ws: true },
+    },
   },
 });

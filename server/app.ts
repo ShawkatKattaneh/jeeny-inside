@@ -11,6 +11,8 @@ import { board, cancel, createRequest, dropOff, fail, getRequest, startTrip, tri
 import { dispatchRequest, type DispatchError } from "../engine/dispatch.js";
 import { tapIn } from "../engine/tapIn.js";
 import { advance } from "../engine/simulation.js";
+import { computeAnalytics } from "../engine/analytics.js";
+import { AnalyticsQuery } from "../shared/analytics.js";
 import { createAppStore, type AppStore } from "./state.js";
 import { attachRealtime, snapshotOf } from "./realtime.js";
 import { registerErrorHandler, rideErrorResponse, tapInErrorHandler, validationErrorBody } from "./errors.js";
@@ -36,8 +38,9 @@ function sendResult<R extends { ok: true } | { ok: false; error: RideError | Dis
 }
 
 /**
- * Either the validated campus and starting fleet (the app builds its own state from them), or a store
- * that was already initialized with createAppStore (tests use this to start from a prepared state).
+ * Either the validated campus and starting fleet (the app builds its own store on a fresh in-memory
+ * database), or a store that was already opened: openAppStore on the database file in production
+ * (server/index.ts), or createAppStore in tests that start from a prepared state.
  */
 export type AppOptions = (
   | {
@@ -64,14 +67,17 @@ export type AppOptions = (
  * server/index.ts calls it once. Routes hold no business rules: they validate the payload shape, run
  * engine operations through the store, and map engine errors (server/errors.ts).
  * Dispatch is explicit (one request per call) and simulated time moves only when a client calls
- * /api/simulation/advance: there are no timers or background loops. State is in memory only.
- * Realtime: Socket.IO shares this app's HTTP server (server/realtime.ts). SQLite arrives with the phase that needs it.
+ * /api/simulation/advance: there are no timers or background loops.
+ * Realtime: Socket.IO shares this app's HTTP server (server/realtime.ts).
+ * Persistence (Phase 5): every committed operation is saved to SQLite before it answers (server/state.ts).
  */
 export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   const { clientDir, logger = false, tapBaseUrl = null } = options;
   // Throws (and the server does not start) if the engine refuses this campus and fleet.
   const store: AppStore = options.store ?? createAppStore(options.campus, options.fleet);
   const app = Fastify({ logger });
+  // A store built here (in-memory database) closes with the app; a store passed in belongs to the caller.
+  if (!options.store) app.addHook("onClose", async () => store.close());
   registerErrorHandler(app);
   // Socket.IO on this app's own HTTP server: pushes one "state:update" per committed operation.
   attachRealtime(app, store);
@@ -83,6 +89,18 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
 
   /** The whole ride state with its revision: the authoritative resync point for realtime clients. */
   app.get("/api/snapshot", async () => store.read(snapshotOf));
+
+  /**
+   * Phase 5 Prompt 2: campus analytics over the committed ride state (engine/analytics.ts). Read-only:
+   * store.read runs a pure function on the last committed state (the same data the database holds) and
+   * hands back a copy, so no operation runs, nothing is written, no revision moves and no update is sent.
+   * Takes no query parameters.
+   */
+  app.get("/api/analytics", async (req, reply) => {
+    const query = AnalyticsQuery.safeParse(req.query ?? {});
+    if (!query.success) return reply.code(400).send(validationErrorBody(query.error, "analytics query (it takes no parameters)"));
+    return store.read((s, revision) => computeAnalytics(s, revision));
+  });
 
   // ---------- Fleet (read-only) ----------
 

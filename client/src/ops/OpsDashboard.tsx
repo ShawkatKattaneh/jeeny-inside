@@ -14,6 +14,8 @@ import { LiveStatus } from "../student/LiveStatus";
 import { DetailsPanel, DispatchPanel, FleetTable, MetricsPanel, RidesTables, SimulationPanel, type Selected } from "./OpsPanels";
 import { simClock } from "./opsFormat";
 import { TapPointsPanel } from "./TapPointsPanel";
+import { AnalyticsPanel } from "./AnalyticsPanel";
+import type { FetchAnalytics } from "../lib/analyticsApi";
 
 /** What the map highlights for the current selection: a ride's pickup, destination, current leg and cart. */
 function mapFocus(data: StateSnapshot, selected: Selected) {
@@ -34,7 +36,7 @@ function mapFocus(data: StateSnapshot, selected: Selected) {
  * Operations Dashboard: fleet, requests, trips, explicit dispatch and simulation controls, details and
  * the campus map. Every figure comes from the one shared realtime store; nothing runs on its own.
  */
-export function OpsDashboard({ api: injectedApi, personas: injectedPersonas, tapBaseUrl }: { api?: OpsApi; personas?: Persona[]; /** Tests only: the Tap-In base URL (undefined = ask the server). */ tapBaseUrl?: string | null }) {
+export function OpsDashboard({ api: injectedApi, personas: injectedPersonas, tapBaseUrl, fetchAnalytics }: { api?: OpsApi; personas?: Persona[]; /** Tests only: the Tap-In base URL (undefined = ask the server). */ tapBaseUrl?: string | null; /** Tests only: how campus analytics are loaded (undefined = GET /api/analytics). */ fetchAnalytics?: FetchAnalytics }) {
   const campus = useCampus();
   const store = useRealtimeStore();
   const realtime = useRealtime();
@@ -113,6 +115,7 @@ export function OpsDashboard({ api: injectedApi, personas: injectedPersonas, tap
       </div>
       <FleetTable data={data} campus={campus} personas={personas} selected={selected} onSelect={setSelected} />
       <RidesTables data={data} campus={campus} personas={personas} selected={selected} onSelect={setSelected} />
+      <AnalyticsPanel revision={data.revision} fetchAnalytics={fetchAnalytics} />
       <TapPointsPanel campus={campus} baseUrl={tapBaseUrl} />
     </>
   );

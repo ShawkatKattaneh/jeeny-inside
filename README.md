@@ -8,7 +8,7 @@ Campus mobility for university students on electric golf carts: a Student app, D
 
 ## Run it
 
-You need Node.js 20 or newer.
+You need Node.js 22.13.0 or newer within the 22.x line, or 23.4.0 and newer (the server saves rides with Node's built-in SQLite module).
 
 ```bash
 npm install
@@ -38,6 +38,34 @@ npm run dev -- --campus=campus/demo-valley.json
 
 `CAMPUS_FILE=path/to/campus.json` works too. A real campus is a new JSON file with the same shape (`shared/schemas.ts`, `CampusConfig`); no code changes. The server refuses to start on an invalid file or one with locations no cart can reach, and says why.
 
+### Saved ride state (SQLite, Phase 5)
+
+Rides, carts, trips, Tap-In records, the simulated clock and the realtime revision are saved in a SQLite file, so they survive a server restart. Each campus has its own file by default: `data/<campus id>.sqlite` (for example `data/wadi-cedar.sqlite`). The `data/` folder and SQLite's side files are git-ignored.
+
+```bash
+npm start -- --db=data/rehearsal.sqlite     # use another database file
+DB_FILE=data/rehearsal.sqlite npm start      # the same, as an environment variable
+```
+
+- **First start on a new file:** the schema is created and the carts are copied from the fleet file (`campus/fleets/<campus id>.json`, or `--fleet=` / `FLEET_FILE`), in one step. Requests and trips start empty.
+- **Every later start:** the saved state is loaded and checked with every engine rule. The fleet file is not read again, so editing it changes nothing for an existing database.
+- **Starting fresh** (for example before a demo): start with a new `--db=` file, or stop the server and move the old file away yourself. The server never deletes, resets or re-seeds an existing database.
+- **The server refuses to start, and says why,** if the file is in use by another running server, belongs to another campus, was created from a campus file that has since changed, has a newer schema than this code, is not a Jeeny INSIDE database, or holds rows that break a ride rule. The file is left as it was.
+- Every change is written to disk before the API answers. If a write fails, the API returns the generic 500, nothing is published to sockets, and the server keeps the last saved state.
+- Stop the server with Ctrl+C: it stops serving and closes the database cleanly.
+- Node 22 prints "ExperimentalWarning: SQLite is an experimental feature" at startup. That is Node's notice about its built-in module, not an error.
+
+Schema changes are versioned migrations in `server/migrations.ts` (see the comment there for how to add one).
+
+### Campus analytics (Phase 5)
+
+`GET /api/analytics` (no query parameters) returns descriptive figures computed from the committed ride state (`engine/analytics.ts`; shape and rules in `shared/analytics.ts`). The Operations Center shows them in the "Campus analytics" card, refreshed on every new revision. It is read-only: no write, no revision, no socket update.
+
+- Units are kept apart and named: ride requests, cart trips, rider entries on trips, carts, seats.
+- All times use the simulated clock (simulated seconds since the database was created). History is every record in this database.
+- Measured: demand by status and mode, pickup and destination activity (separately), request to Tap-In (arrival, not boarding), current elapsed wait, request to drop-off, carts by status, seat occupancy now, trips per cart, cancelled share of finished requests, and plain factual observations.
+- Not available, with the reason shown and never displayed as 0: calendar windows (today, 7 or 30 days: records have no wall-clock time), demand over time, request to boarding (boarding time is not saved), dispatch-eligible carts (eligibility depends on the request), utilization over time, and the step at which rides were cancelled.
+
 ### Starting fleet
 
 The server starts with the carts in `campus/fleets/<campus id>.json` (sample data: CART-01 and CART-02, simulated, idle at the depot). Each campus has its own fleet file, so swapping the campus swaps the fleet. `--fleet=path/to/fleet.json` or `FLEET_FILE=...` picks another file. The server refuses to start on a missing file, a fleet for another campus, or any invalid cart, and says why.
@@ -66,7 +94,7 @@ Errors are `{ error, code }` (plus `issues` for an invalid body): 400 invalid in
 
 **Dispatch policy** (`engine/dispatch.ts`, deterministic, no AI): a cart is a candidate only if the engine's own `assignCart` accepts it (in service and idle, battery at or above 15%, a free seat, no open trip, parked at a location rather than on a path, routes to the pickup and the destination). Candidates are ranked by the exact, unrounded time to reach the pickup on the route the trip will drive, then by the route's length, then by cart id. One call dispatches one request; nothing is dispatched automatically.
 
-**Simulated time** moves only when `/api/simulation/advance` is called: a manual demo control, with no timers or real-time movement. Advancing never boards or drops anyone off. All ride state lives in memory and starts again from the campus and fleet files when the server restarts.
+**Simulated time** moves only when `/api/simulation/advance` is called: a manual demo control, with no timers or real-time movement. Advancing never boards or drops anyone off. The ride state, including the clock, is saved in SQLite and survives restarts (see "Saved ride state").
 
 ### Realtime updates (Socket.IO)
 
@@ -82,7 +110,7 @@ Sockets only listen. REST is the only way to change anything, and the server han
 
 Schemas are in `shared/schemas.ts`; event names and `classifyRevision` are in `shared/realtime.ts`. `operation` is one of `ride_request.created`, `ride.dispatched`, `ride.started`, `ride.boarded`, `ride.dropped_off`, `ride.cancelled` or `simulation.advanced`. A cancelled ride's mid-path cleanup finishes inside a `simulation.advanced` update, which shows the trip `cancelled` and the cart `idle`.
 
-**Revision.** The server keeps a counter per running instance: 0 at startup, +1 for each committed operation. Each successful REST call that changes state is one operation and sends one update; a multi-cart advance is still one revision. Rejected or failed calls change nothing, send nothing and do not use up a number. An advance with nothing moving still moves the clock, so it counts as an operation. Updates leave the server in revision order. A snapshot's revision is exactly the state it shows, and the first snapshot can't race an update: commits and the connection handler both run on Node's single thread, so every later change reaches the client after its snapshot.
+**Revision.** The server keeps a counter, saved with the ride state: 0 for a new database, +1 for each committed operation, and after a restart it continues from the saved value. Each successful REST call that changes state is one operation and sends one update; a multi-cart advance is still one revision. Rejected or failed calls change nothing, send nothing and do not use up a number. An advance with nothing moving still moves the clock, so it counts as an operation. Updates leave the server in revision order. A snapshot's revision is exactly the state it shows, and the first snapshot can't race an update: commits and the connection handler both run on Node's single thread, so every later change reaches the client after its snapshot.
 
 **Client rule.** Hold the revision of the last snapshot or update you applied. For each update, `classifyRevision(held, update.revision)` says:
 - `apply`: it is the next revision.
@@ -93,7 +121,7 @@ After a reconnect the server sends a fresh snapshot anyway.
 
 **Delivery is best effort.** Socket.IO does not store or replay events, so a client that was disconnected misses them and must resync from a snapshot. A committed change is never rolled back because a client didn't receive it. The REST snapshot is always the authority; socket updates are notifications.
 
-**Not included yet:** no authentication or roles (anyone who can reach the port can listen, and there are no CORS options because the demo serves the app and the socket from one origin), no persistence (a restart starts again at revision 0 from the campus and fleet files), and no Ops passcode yet (the Student App, Driver Mode and the Operations Center all use the socket, see below).
+**Not included yet:** no authentication or roles (anyone who can reach the port can listen, and there are no CORS options because the demo serves the app and the socket from one origin), and no Ops passcode yet (the Student App, Driver Mode and the Operations Center all use the socket, see below).
 
 ### Student App (Phase 3)
 
@@ -105,7 +133,7 @@ Pick a student persona (Lina, Omar or Sara) on the start screen. The Student App
 - **Ownership:** rides are filtered by the request's `studentId`. This is presentation only, not security: there is no login, the server does not check `studentId`, and every socket receives the whole state.
 - **Fares:** the fare shown on a ride is the server's `fareJod` (0.25 JOD, simulated, no payment). Loyalty (6th ride free) is explained but not tracked: the server always sets `freeLoyaltyRide: false`, so the app never claims a free ride.
 - **Map:** the campus file's schematic map, not GPS. It shows the selected stops, and for an active ride only its own cart at the server's position and the leg the server planned. No ETAs are shown (no API exposes them yet).
-- History lives in the server's memory and is cleared when the server restarts.
+- History is saved with the ride state and survives a server restart.
 
 ### Driver Mode (Phase 3)
 
@@ -167,7 +195,7 @@ One repository, one package, four folders with fixed boundaries (Plan section 5)
 campus/      Campus config files (fictional until the university is chosen) and fleets/ starting carts per campus
 shared/      Zod schemas and types used by every side, approved settings, demo personas
 engine/      Pure TypeScript logic (no network, database or timers): campus graph, shortest route, ETA
-server/      Fastify: REST endpoints, Socket.IO updates, campus and fleet loading, the one in-memory ride state, serves the built app in demo mode
+server/      Fastify: REST endpoints, Socket.IO updates, campus and fleet loading, the one ride state (saved in SQLite), serves the built app in demo mode
 client/      React + Vite + Tailwind web app
   src/ui/      Design tokens v0 components: brand lockup, pill and icon buttons, badges, campus map
   src/routes/  Persona picker, /student (Student App area and its routes), /driver (Driver Mode), /ops (Operations Center)

@@ -405,7 +405,7 @@ export const StateOperation = z.enum([
 ]);
 export type StateOperation = z.infer<typeof StateOperation>;
 
-/** Revision of the server's in-memory state: 0 at startup, +1 per committed operation. */
+/** Revision of the server's ride state: 0 for a new database, +1 per committed operation, continued after a restart (Phase 5). */
 const Revision = z.number().int().min(0);
 
 /**
@@ -416,7 +416,7 @@ export const StateSnapshot = z
   .object({
     revision: Revision,
     campusId: z.string().min(1),
-    /** Simulated seconds since the server started. */
+    /** Simulated seconds since the ride state was created (saved, so it continues after a restart). */
     clockSeconds: z.number().min(0),
     requests: z.array(RideRequest),
     trips: z.array(Trip),

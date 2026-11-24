@@ -1,13 +1,17 @@
+import { resolve } from "node:path";
 import { buildApp } from "./app.js";
 import { loadCampus } from "./campus.js";
-import { loadFleet } from "./fleet.js";
+import { defaultDatabaseFile } from "./database.js";
+import { defaultFleetFile, loadFleet } from "./fleet.js";
 import { lanAddresses, parsePublicHost, tapBaseUrlFor } from "./network.js";
+import { openAppStore } from "./state.js";
 
 // Plain CLI flags instead of env-var prefixes so the same commands work on Windows, macOS and Linux.
 const args = process.argv.slice(2);
 const isProd = args.includes("--demo") || process.env.NODE_ENV === "production";
 const campusArg = args.find((a) => a.startsWith("--campus="))?.slice("--campus=".length);
 const fleetArg = args.find((a) => a.startsWith("--fleet="))?.slice("--fleet=".length);
+const dbArg = args.find((a) => a.startsWith("--db="))?.slice("--db=".length);
 const PORT = Number(process.env.PORT ?? (isProd ? 3000 : 3001));
 // 0.0.0.0 so phones on the laptop's hotspot can connect, not just localhost.
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -22,16 +26,51 @@ if (!publicHost.ok) {
 }
 
 const campus = loadCampus(campusArg);
-const fleet = loadFleet(campus, fleetArg);
+
+// Phase 5: the ride state is saved in SQLite. Startup order: open the file, apply its settings, upgrade
+// the schema, check it, load and validate the saved state; only a brand-new empty database is seeded,
+// from the fleet file (which is read only then). The server listens only after all of that succeeded.
+const dbFile = resolve(process.cwd(), dbArg ?? process.env.DB_FILE ?? defaultDatabaseFile(campus.id));
+const fleetFile = fleetArg ?? process.env.FLEET_FILE ?? defaultFleetFile(campus.id);
+let opened: ReturnType<typeof openAppStore>;
+try {
+  opened = openAppStore({ campus, databaseFile: dbFile, loadSeedFleet: () => loadFleet(campus, fleetArg), seededFrom: fleetFile });
+} catch (err) {
+  console.error(`\n  The server did not start: ${(err as Error).message}\n  Database: ${dbFile} (choose another with --db=<file> or DB_FILE=<file>)\n`);
+  process.exit(1);
+}
+const { store } = opened;
+
 const webPort = isProd ? PORT : Number(process.env.CLIENT_PORT ?? 5173);
 const tapBaseUrl = tapBaseUrlFor(publicHost.host, webPort);
 // The one app, and so the one authoritative ride state, for this server process.
-const app = await buildApp({ campus, fleet, clientDir: isProd ? "dist" : undefined, logger: false, tapBaseUrl });
+const app = await buildApp({ store, clientDir: isProd ? "dist" : undefined, logger: false, tapBaseUrl });
 await app.listen({ port: PORT, host: HOST });
+
+// Graceful stop (Ctrl+C, or a dev-mode restart): stop serving, then close the database. Every commit is
+// already on disk before it was answered, so this only releases the file cleanly.
+let stopping = false;
+async function shutdown(signal: string) {
+  if (stopping) return;
+  stopping = true;
+  try {
+    await app.close();
+  } finally {
+    store.close();
+    console.log(`\n  Jeeny INSIDE server stopped (${signal}); database closed.`);
+    process.exit(0);
+  }
+}
+process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
 console.log(`\n  Jeeny INSIDE server ready (${isProd ? "demo build" : "dev API"})`);
 console.log(`  Campus: ${campus.name}${campus.fictional ? " (fictional)" : ""}, ${campus.locations.length} locations`);
-console.log(`  Fleet: ${fleet.carts.size} simulated cart${fleet.carts.size === 1 ? "" : "s"}`);
+const cartCount = store.read((s) => s.fleet.carts.size);
+console.log(`  Fleet: ${cartCount} simulated cart${cartCount === 1 ? "" : "s"}`);
+console.log(opened.created
+  ? `  Database: ${dbFile} (new, seeded from ${fleetFile})`
+  : `  Database: ${dbFile} (restored at revision ${opened.revision})`);
 if (isProd) {
   console.log(`  On this laptop:  http://localhost:${webPort}`);
   for (const ip of lanAddresses()) console.log(`  On phones:       http://${ip}:${webPort}`);

@@ -11,23 +11,33 @@
  *   request can run between reading the current state and replacing it: updates cannot interleave
  *   or be lost, and no lock or queue is needed. Keep it that way: never await inside an operation.
  *
- * Revision: a counter per store, starting at 0, that goes up by exactly 1 each time `apply` replaces
+ * Revision: a counter per store, starting at the saved revision (see below), that goes up by exactly 1 each time `apply` replaces
  * the state. Failed operations, operations that throw, and operations that hand back the very same
  * state change nothing and do not move it. `read` sees the state and its revision together.
+ *
+ * Persistence (Phase 5): every commit is first written to SQLite (server/persistence.ts) in one
+ * transaction. Only when that write has committed does `apply` swap in the new state, move the revision
+ * and run commit listeners (realtime updates). If the write fails, `apply` throws a PersistenceError:
+ * the in-memory state, the revision and the database all stay exactly as they were, no listener runs,
+ * and the route's caller gets the app-wide generic 500 (server/errors.ts). The SQLite calls are
+ * synchronous too, so the no-interleaving rule above still holds with no lock or queue.
  *
  * Commit listeners (`onCommit`) run synchronously right after the new state and revision are stored,
  * in commit order. They are told about a commit; they cannot undo it. A listener that throws is
  * logged and ignored, so delivery problems (for example Socket.IO) never roll back a committed state.
  *
- * The state lives in memory only: it is not saved anywhere and starts again from the campus and
- * fleet files whenever the server process restarts.
+ * Revision: 0 for a brand-new database; after a restart it continues from the saved revision, so a
+ * revision always names the same state and never goes backwards for a client that resyncs.
  *
- * Each buildApp call creates its own store, so tests get isolated instances; production startup
- * (server/index.ts) calls buildApp once, so normal operation has exactly one store.
+ * Production startup (server/index.ts) opens exactly one store from the database file with
+ * openAppStore and hands it to buildApp. createAppStore (and buildApp given a campus and fleet) makes
+ * an isolated store on a fresh in-memory database, so tests get isolated instances on the same write path.
  */
 import type { CampusConfig, StateOperation } from "../shared/schemas.js";
 import type { Fleet } from "../engine/fleet.js";
 import { createRideState, type RideState } from "../engine/rides.js";
+import { MEMORY_DATABASE } from "./database.js";
+import { openPersistedState, type OpenPersistedStateOptions, type StatePersistence } from "./persistence.js";
 
 /** What an engine operation returns: a new state plus extra fields, or an error (RideResult's shape). */
 export type OperationResult = { ok: true; state: RideState } | { ok: false; error: object };
@@ -53,6 +63,8 @@ export interface AppStore {
   apply<R extends OperationResult>(op: (state: RideState) => R, operation?: StateOperation): ApplyResult<R>;
   /** Be told about every later commit, in order. Returns a function that stops it. */
   onCommit(listener: (commit: Commit) => void): () => void;
+  /** Close the database. Later writes throw and change nothing; reads still see the last committed state. */
+  close(): void;
 }
 
 function deepFreeze<T>(value: T): T {
@@ -63,17 +75,10 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-/**
- * Build the initial ride state with the engine's own checks and wrap it in a store. Throws a readable
- * error if the engine refuses the campus and fleet; it never substitutes an empty or default state.
- * The campus is copied and deep-frozen first, so the caller's object is untouched and the stored
- * campus cannot be changed through any reference.
- */
-export function createAppStore(campus: CampusConfig, fleet: Fleet): AppStore {
-  const created = createRideState(deepFreeze(structuredClone(campus)), fleet);
-  if (!created.ok) throw new Error(`Could not start the ride engine: ${created.error.message}`);
-  let current: RideState = created.state;
-  let revision = 0;
+/** The store around an already validated state and its saved revision. Every commit is saved first. */
+function storeFrom(initial: RideState, initialRevision: number, persistence: StatePersistence): AppStore {
+  let current: RideState = initial;
+  let revision = initialRevision;
   const listeners = new Set<(commit: Commit) => void>();
 
   return Object.freeze({
@@ -85,8 +90,10 @@ export function createAppStore(campus: CampusConfig, fleet: Fleet): AppStore {
       if (!result.ok) return { ok: false, error: structuredClone(result.error) } as ApplyResult<R>;
       const { ok: _ok, state: next, ...extra } = result as { ok: true; state: RideState };
       const reply = { ok: true, ...structuredClone(extra) } as ApplyResult<R>;
-      if (next === current) return reply; // no change: no new revision, nothing to tell
+      if (next === current) return reply; // no change: no new revision, nothing to save or tell
       const previous = current;
+      // Durable first: throws PersistenceError (and changes nothing here) unless the whole commit was written.
+      persistence.save({ revision: revision + 1, previous, state: next });
       current = next;
       revision += 1;
       const commit: Commit = { revision, operation, previous, state: next };
@@ -103,5 +110,33 @@ export function createAppStore(campus: CampusConfig, fleet: Fleet): AppStore {
       listeners.add(listener);
       return () => { listeners.delete(listener); };
     },
+    close(): void {
+      persistence.close();
+    },
   });
+}
+
+/**
+ * Production startup (server/index.ts): open the database, upgrade it, seed it only if it is brand-new,
+ * load and validate the saved state, and wrap it in a store. Throws DatabaseStartupError on any problem;
+ * it never falls back to an empty or default state. The campus is copied and deep-frozen first.
+ */
+export function openAppStore(options: OpenPersistedStateOptions): { store: AppStore; created: boolean; revision: number } {
+  const campus = deepFreeze(structuredClone(options.campus));
+  const opened = openPersistedState({ ...options, campus });
+  return { store: storeFrom(opened.state, opened.revision, opened.persistence), created: opened.created, revision: opened.revision };
+}
+
+/**
+ * A fresh store for this campus and fleet, saved to a new in-memory SQLite database (tests and tools:
+ * the same write path as production, but nothing survives the process). Throws a readable error if the
+ * engine refuses the campus and fleet; it never substitutes an empty or default state.
+ * The campus is copied and deep-frozen first, so the caller's object is untouched and the stored
+ * campus cannot be changed through any reference.
+ */
+export function createAppStore(campus: CampusConfig, fleet: Fleet): AppStore {
+  const frozen = deepFreeze(structuredClone(campus));
+  const created = createRideState(frozen, fleet);
+  if (!created.ok) throw new Error(`Could not start the ride engine: ${created.error.message}`);
+  return openAppStore({ campus: frozen, databaseFile: MEMORY_DATABASE, loadSeedFleet: () => fleet, seededFrom: "in-memory store" }).store;
 }

@@ -85,6 +85,12 @@ const pad = (n: number) => String(n).padStart(4, "0");
 
 /** Start a ride state for one campus and its fleet. Fails if the fleet belongs to another campus or is inconsistent. */
 export function createRideState(campus: CampusConfig, fleet: Fleet): RideResult {
+  const base = baseRideState(campus, fleet);
+  return base.ok ? finish(base.state) : base;
+}
+
+/** The campus and fleet checks of createRideState, and the empty state they give (not yet checked against the ride invariants). */
+function baseRideState(campus: CampusConfig, fleet: Fleet): RideResult {
   if (fleet.campusId !== campus.id) {
     return fail("INCONSISTENT_STATE", `The fleet was built for campus "${fleet.campusId}", not "${campus.id}"`);
   }
@@ -106,7 +112,60 @@ export function createRideState(campus: CampusConfig, fleet: Fleet): RideResult 
     requests: new Map(), trips: new Map(),
     clockSeconds: 0, nextRequestNo: 1, nextTripNo: 1,
   });
-  return finish(state);
+  return { ok: true, state };
+}
+
+/** What a saved ride state holds besides the campus and fleet (Phase 5 persistence, server/persistence.ts). */
+export interface SavedRideState {
+  requests: readonly unknown[];
+  trips: readonly unknown[];
+  clockSeconds: number;
+  nextRequestNo: number;
+  nextTripNo: number;
+}
+
+const savedIdNo = (id: string, prefix: string): number | null => {
+  const m = new RegExp(`^${prefix}-(\\d+)$`).exec(id);
+  return m ? Number(m[1]) : null;
+};
+
+/**
+ * Rebuild a ride state from saved data (Phase 5). Nothing is repaired, defaulted or dropped: the campus
+ * and fleet get the same checks as createRideState, every request and trip is parsed with its schema,
+ * ids must be unique and below the saved id counters (so new ids cannot collide), and the result must
+ * pass every ride invariant. Any problem is an INCONSISTENT_STATE error naming the first one found.
+ */
+export function restoreRideState(campus: CampusConfig, fleet: Fleet, saved: SavedRideState): RideResult {
+  // Only the campus and fleet checks here: a saved fleet may hold assigned or occupied carts whose trips
+  // are added below, so the ride invariants run once, on the whole restored state.
+  const base = baseRideState(campus, fleet);
+  if (!base.ok) return base;
+  const { clockSeconds, nextRequestNo, nextTripNo } = saved;
+  if (!(Number.isFinite(clockSeconds) && clockSeconds >= 0)) return fail("INCONSISTENT_STATE", `Saved clock ${clockSeconds} is not a valid number of seconds`);
+  if (!(Number.isInteger(nextRequestNo) && nextRequestNo >= 1)) return fail("INCONSISTENT_STATE", `Saved next request number ${nextRequestNo} is invalid`);
+  if (!(Number.isInteger(nextTripNo) && nextTripNo >= 1)) return fail("INCONSISTENT_STATE", `Saved next trip number ${nextTripNo} is invalid`);
+
+  const requests = new Map<string, Readonly<RideRequest>>();
+  for (const raw of saved.requests) {
+    const parsed = RideRequest.safeParse(raw);
+    if (!parsed.success) return fail("INCONSISTENT_STATE", `A saved ride request is invalid: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+    const r = parsed.data;
+    const no = savedIdNo(r.id, "REQ");
+    if (no === null || no < 1 || no >= nextRequestNo) return fail("INCONSISTENT_STATE", `Saved ride request id "${r.id}" does not fit the saved id counter (${nextRequestNo})`);
+    if (requests.has(r.id)) return fail("INCONSISTENT_STATE", `Saved ride request id "${r.id}" is used twice`);
+    requests.set(r.id, freezeRequest(r));
+  }
+  const trips = new Map<string, Readonly<Trip>>();
+  for (const raw of saved.trips) {
+    const parsed = Trip.safeParse(raw);
+    if (!parsed.success) return fail("INCONSISTENT_STATE", `A saved trip is invalid: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+    const t = parsed.data;
+    const no = savedIdNo(t.id, "TRIP");
+    if (no === null || no < 1 || no >= nextTripNo) return fail("INCONSISTENT_STATE", `Saved trip id "${t.id}" does not fit the saved id counter (${nextTripNo})`);
+    if (trips.has(t.id)) return fail("INCONSISTENT_STATE", `Saved trip id "${t.id}" is used twice`);
+    trips.set(t.id, freezeTrip(t));
+  }
+  return finish(Object.freeze({ ...base.state, requests, trips, clockSeconds, nextRequestNo, nextTripNo }));
 }
 
 // ---------- Lookups ----------

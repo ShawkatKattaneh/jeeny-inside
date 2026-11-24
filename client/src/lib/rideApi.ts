@@ -1,11 +1,29 @@
 /**
  * The Student App's, Driver Mode's and Operations Dashboard's calls to the existing ride-request REST API (Phase 2). Request bodies use the
- * shared CreateRideRequestBody shape (studentId, pickupId, destinationId only: the server creates ids,
- * status, fare and timestamps). Successful responses are checked with the shared schemas; errors keep
+ * shared CreateRideRequestBody shape (studentId, pickupId, destinationId, and from Phase 4 an optional
+ * mode; the server creates ids, status, fare and timestamps). Successful responses are checked with the shared schemas; errors keep
  * the API's { error, code } body so the UI can show the server's own explanation.
  */
 import { z } from "zod";
 import { Cart, RideRequest, Trip, type AdvanceSimulationBody, type CreateRideRequestBody } from "../../../shared/schemas";
+
+/** One open trip as the server's shared dispatch judged it (engine/dispatch.ts JoinCandidate). Read-only on the client. */
+export const JoinCandidate = z.object({
+  tripId: z.string(),
+  cartId: z.string().nullable(),
+  eligible: z.boolean(),
+  excludedCode: z.string().optional(),
+  excludedReason: z.string().optional(),
+  /** For DELAY_CAP_EXCEEDED: the rider and measure (wait or journey) over the limit, in planned driving seconds. */
+  worst: z.object({ requestId: z.string(), measure: z.enum(["wait", "journey"]), seconds: z.number() }).optional(),
+  stage: z.enum(["planned", "moving"]).optional(),
+  /** The trip's stop order (location ids) after the join, as planned by the server. */
+  stopLocationIds: z.array(z.string()).optional(),
+  /** Each affected rider's added planned driving time against their own solo baseline, as computed by the server. */
+  riders: z.array(z.object({ requestId: z.string(), joining: z.boolean(), waitDelaySeconds: z.number().nullable(), journeyDelaySeconds: z.number() })).optional(),
+  rank: z.number().optional(),
+});
+export type JoinCandidate = z.infer<typeof JoinCandidate>;
 
 /**
  * The server's dispatch explanation (engine/dispatch.ts DispatchSelection), sent on a successful
@@ -25,6 +43,14 @@ export const DispatchSelection = z.object({
       rank: z.number().optional(),
     }),
   ),
+  // ---- Phase 4: present only on a shared request's selection (engine/dispatch.ts); a solo selection has none of these. ----
+  mode: z.literal("shared").optional(),
+  /** "joined": joined an existing trip; "new_cart": got its own cart; null: neither (with 409 NO_CART_AVAILABLE). */
+  outcome: z.enum(["joined", "new_cart"]).nullable().optional(),
+  selectedTripId: z.string().nullable().optional(),
+  maxAddedDelaySeconds: z.number().optional(),
+  /** Every open trip the server looked at, in trip id order, each eligible (with rank) or excluded (with a code and reason). */
+  joinCandidates: z.array(JoinCandidate).optional(),
 });
 export type DispatchSelection = z.infer<typeof DispatchSelection>;
 

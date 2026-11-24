@@ -91,3 +91,34 @@ export const TRIP_STATUS_TEXT: Record<TripStatus, string> = {
   completed: "Completed",
   cancelled: "Cancelled",
 };
+
+// ---------- Phase 4: shared trips (display only) ----------
+
+/**
+ * Plain-language meaning of each exclusion code the server's shared dispatch can give for a trip
+ * (engine/sharedPlan.ts JoinExclusionCode). Display text only: the server decided, and its own
+ * reason is shown next to it.
+ */
+export const JOIN_EXCLUSION_TEXT: Record<string, string> = {
+  SOLO_BASELINE_UNAVAILABLE: "No cart could take this ride alone right now, so there is no solo time to compare a shared trip against",
+  TRIP_NOT_JOINABLE: "Trip is ending or finished",
+  STAGE_NOT_ALLOWED: "Someone has already boarded (joining after boarding is not enabled)",
+  TRIP_NOT_SHARED: "A rider on this trip asked for a solo ride",
+  CART_INELIGIBLE: "The trip's cart cannot take another rider (status or battery reserve)",
+  SAME_STUDENT: "This student is already on the trip",
+  TRIP_FULL: "No free seat once committed riders are counted",
+  RIDER_BASELINE_MISSING: "A rider on the trip has no recorded solo time",
+  ROUTE_METRIC_UNAVAILABLE: "No route time is available for a stop",
+  DELAY_CAP_EXCEEDED: "Would add more than the allowed delay for a rider",
+};
+
+/** Riders of one trip, from its passenger flags: committed (not cancelled, not dropped off) and on board. */
+export function tripRiderCounts(trip: StateSnapshot["trips"][number]): { committed: number; onBoard: number; total: number } {
+  return {
+    committed: trip.passengers.filter((p) => !p.cancelled && !p.droppedOff).length,
+    onBoard: trip.passengers.filter((p) => p.boarded && !p.droppedOff).length,
+    total: trip.passengers.length,
+  };
+}
+
+export const RIDER_STATE_TEXT = { waiting: "waiting", on_board: "on board", dropped_off: "dropped off", cancelled: "cancelled" } as const;

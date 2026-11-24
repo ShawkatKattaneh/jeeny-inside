@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { PHASE_LABEL, TRACK_STEPS, canCancel, phaseDetail, trackStepIndex, type RidePhase, type StudentRide } from "../lib/studentRides";
+import { PHASE_LABEL, TRACK_STEPS, canCancel, phaseDetail, sharedCancelNote, sharedRideLines, trackStepIndex, type RidePhase, type StudentRide } from "../lib/studentRides";
 import { Badge } from "../ui/Badge";
 import { Card } from "../ui/Card";
 import { FareLine } from "./FareInfo";
@@ -16,6 +16,14 @@ const PHASE_TONE: Record<RidePhase, string> = {
   at_destination: "bg-brand-tint text-brand",
   completed: "bg-green-50 text-success",
   cancelled: "bg-surface text-muted",
+};
+
+const TRIP_TEXT: Record<NonNullable<StudentRide["trip"]>["status"], string> = {
+  planned: "Planned, not started",
+  active: "Under way",
+  cancelling: "Ending",
+  completed: "Completed",
+  cancelled: "Cancelled",
 };
 
 export function PhasePill({ phase }: { phase: RidePhase }) {
@@ -50,6 +58,8 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
   const [cancel, setCancel] = useState<{ step: "idle" | "confirm" | "sending" } | { step: "error"; message: string }>({ step: "idle" });
 
   const sending = useRef(false); // guards against a second tap before React re-renders
+  const sharedLines = sharedRideLines(ride);
+  const cancelNote = sharedCancelNote(ride);
 
   async function confirmCancel() {
     if (sending.current) return;
@@ -69,7 +79,10 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
     <Card className="flex flex-col gap-3 p-4" aria-labelledby={`ride-${ride.request.id}`} role="region">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-xs text-muted">{ride.active ? "Your ride" : "Ride"} · {ride.request.id}</div>
+          <div className="text-xs text-muted">
+            {ride.active ? "Your ride" : "Ride"} · {ride.request.id}
+            {ride.request.mode === "shared" && <> · <span className="font-bold text-brand" data-testid="ride-shared">Shared</span></>}
+          </div>
           <h2 id={`ride-${ride.request.id}`} className="text-lg font-extrabold tracking-tight" data-testid="ride-phase">
             {PHASE_LABEL[ride.phase]}
           </h2>
@@ -85,12 +98,23 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
         {phaseDetail(ride, campus)}
         {!ride.synced && <span className="mt-1 block text-xs text-muted">Confirming with live updates…</span>}
       </p>
+      {sharedLines.length > 0 && (
+        <ul className="flex flex-col gap-0.5 rounded-tile bg-brand-tint px-3 py-2 text-xs text-ink" data-testid="shared-info">
+          {sharedLines.map((l) => <li key={l}>{l}</li>)}
+        </ul>
+      )}
       <Tracker phase={ride.phase} />
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
         <dt className="text-muted">From</dt>
         <dd className="truncate font-semibold">{locationName(campus, ride.request.pickupId)}</dd>
         <dt className="text-muted">To</dt>
         <dd className="truncate font-semibold">{locationName(campus, ride.request.destinationId)}</dd>
+        {ride.request.mode === "shared" && ride.trip && (
+          <>
+            <dt className="text-muted">Trip</dt>
+            <dd className="break-words" data-testid="shared-trip-status">{TRIP_TEXT[ride.trip.status]} <span className="text-xs text-muted">(the whole cart's trip, not just your ride)</span></dd>
+          </>
+        )}
       </dl>
       <FareLine request={ride.request} />
 
@@ -113,6 +137,7 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
         {(cancel.step === "confirm" || cancel.step === "sending") && (
           <span className="flex flex-wrap items-center gap-2 text-sm">
             <span>Cancel this ride?</span>
+            {cancelNote && <span className="basis-full text-xs text-muted" data-testid="shared-cancel-note">{cancelNote}</span>}
             <button
               type="button"
               onClick={confirmCancel}

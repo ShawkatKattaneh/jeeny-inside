@@ -162,3 +162,76 @@ export function routePathIds(ride: StudentRide | null): string[] {
   if (!ride || !ride.active || ride.trip?.status !== "active" || !ride.trip.leg) return [];
   return ride.trip.leg.pathIds;
 }
+
+// ---------- Phase 4: shared rides (Ghost Ride) ----------
+
+/**
+ * What a student may see about a SHARED ride's trip, read only from the server's trip and passenger
+ * data. Never shows other riders' names, ids or locations: only counts, and the number of stops the
+ * cart still makes before this student's own pickup and drop-off.
+ *
+ * `origin` comes from the trip's passenger list. The server creates a trip with exactly one passenger
+ * (the dispatched request, engine assignCart) and only ever appends joining riders to it (engine
+ * joinTrip); cancelled riders stay in the list with `cancelled: true`. So this request being first means
+ * the trip was created for it (a new cart assignment), and being later means it joined a trip that
+ * already existed. Nothing here decides or predicts a match.
+ */
+export interface SharedTripInfo {
+  origin: "new_cart" | "joined";
+  /** Other riders still part of the trip (not cancelled, not dropped off). */
+  otherRiders: number;
+  /** Riders on board now (boarded and not dropped off), this student included. */
+  onBoard: number;
+  /** Stops the cart makes before this student's pickup (0 = the pickup is the next stop); null once boarded or when the trip is not running. */
+  stopsBeforePickup: number | null;
+  /** Stops the cart makes before this student's drop-off; null once dropped off or when the trip is not running. */
+  stopsBeforeDropOff: number | null;
+}
+
+export function sharedTripInfo(ride: StudentRide): SharedTripInfo | null {
+  const { request, trip } = ride;
+  if (request.mode !== "shared" || !trip) return null;
+  const me = trip.passengers.findIndex((p) => p.requestId === request.id);
+  if (me === -1) return null;
+  const mine = trip.passengers[me]!;
+  const open = (p: Trip["passengers"][number]) => !p.cancelled && !p.droppedOff;
+  const running = trip.status === "planned" || trip.status === "active";
+  const before = (kind: "board" | "alight") => {
+    const i = trip.stops.findIndex((s) => s[kind].includes(request.id));
+    return i === -1 || i < trip.stopIndex ? null : i - trip.stopIndex;
+  };
+  return {
+    origin: me === 0 ? "new_cart" : "joined",
+    otherRiders: trip.passengers.filter((p) => p.requestId !== request.id && open(p)).length,
+    onBoard: trip.passengers.filter((p) => p.boarded && !p.droppedOff).length,
+    stopsBeforePickup: running && !mine.boarded && !mine.cancelled ? before("board") : null,
+    stopsBeforeDropOff: running && !mine.droppedOff && !mine.cancelled ? before("alight") : null,
+  };
+}
+
+const stopsText = (n: number, what: string) => (n === 0 ? `Your ${what} is the next stop.` : `${n} stop${n === 1 ? "" : "s"} before your ${what}.`);
+
+/** Short factual lines about a shared ride, for the status card. Empty for solo rides. */
+export function sharedRideLines(ride: StudentRide): string[] {
+  if (ride.request.mode !== "shared") return [];
+  if (ride.request.status === "requested") {
+    return ["You asked to share. Not matched yet: when your ride is dispatched, the server either adds it to a compatible trip or gives it its own cart."];
+  }
+  const info = sharedTripInfo(ride);
+  if (!info) return ride.active ? ["Shared ride. Waiting for the trip details from live updates."] : [];
+  const lines: string[] = [];
+  if (ride.active) {
+    lines.push(info.origin === "joined" ? "Your ride joined a trip that was already planned." : "A cart was assigned to your ride.");
+    lines.push(info.otherRiders === 0 ? "No other riders on this trip right now." : `Sharing with ${info.otherRiders} other rider${info.otherRiders === 1 ? "" : "s"}.`);
+    if (info.stopsBeforePickup !== null) lines.push(stopsText(info.stopsBeforePickup, "pickup"));
+    else if (info.stopsBeforeDropOff !== null && ride.request.status === "on_board") lines.push(stopsText(info.stopsBeforeDropOff, "drop-off"));
+  }
+  return lines;
+}
+
+/** Shown next to "Cancel ride" on a shared ride: only this student's ride is cancelled. */
+export function sharedCancelNote(ride: StudentRide): string | null {
+  const info = sharedTripInfo(ride);
+  if (!info || info.otherRiders === 0) return null;
+  return "Cancelling removes only your ride. The trip continues for the other riders.";
+}

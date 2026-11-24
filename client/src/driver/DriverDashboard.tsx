@@ -168,8 +168,9 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
               <CampusMap
                 campus={campus}
                 overlay={{
-                  pickupId: view?.request?.pickupId ?? null,
-                  destinationId: view?.request?.destinationId ?? null,
+                  // Shared trips (Phase 4): mark the stop the trip is serving now, as a pickup and/or a drop-off.
+                  pickupId: view?.request?.pickupId ?? (view?.shared?.nextStop?.board.length ? view.shared.nextStop.locationId : null),
+                  destinationId: view?.request?.destinationId ?? (view?.shared?.nextStop?.alight.length ? view.shared.nextStop.locationId : null),
                   routePathIds: view?.trip.leg?.pathIds ?? [],
                   cart: (() => {
                     const p = cartMapPoint(campus, cart.position);

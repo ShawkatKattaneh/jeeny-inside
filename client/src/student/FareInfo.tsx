@@ -41,7 +41,7 @@ export function PricingExplainer() {
       <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-muted">
         <li>Every ride has a simulated fare of {formatJod(SETTINGS.fareJod)}. No real payment is taken and no card details are collected.</li>
         <li>Loyalty rule: after {SETTINGS.loyaltyPaidRidesForFree} completed paid rides, the next one is free. Cancelled and free rides do not count.</li>
-        <li>Shared rides, when they arrive in a later phase, cost the same {formatJod(SETTINGS.sharedFareJod)}.</li>
+        <li>Shared rides cost the same {formatJod(SETTINGS.sharedFareJod)} per rider: each rider has their own fare, with no discount or surcharge.</li>
       </ul>
       <p className="mt-2 text-xs font-semibold text-ink" data-testid="loyalty-limitation">
         Loyalty tracking is not active in this prototype yet, so no free ride is counted or awarded.

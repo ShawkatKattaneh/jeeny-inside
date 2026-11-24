@@ -1,4 +1,4 @@
-import { useEffect, useId, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
 import { bookingBlockReason, checkSelection, stopLocations } from "../lib/booking";
 import { LOCATION_TYPE_LABEL } from "../lib/mapGeometry";
 import { PrimaryButton } from "../ui/Button";
@@ -23,6 +23,9 @@ export function BookingPanel({ selection, onChange }: { selection: Selection; on
   const pickupFieldId = useId();
   const destFieldId = useId();
   const messageId = useId();
+  const modeHelpId = useId();
+  // Phase 4: Solo stays the default; Shared only asks the server to consider combining rides.
+  const [mode, setMode] = useState<"solo" | "shared">("solo");
 
   // A previous attempt's message should not follow the student back to this form later.
   useEffect(() => () => booking.reset(), [booking]);
@@ -35,7 +38,7 @@ export function BookingPanel({ selection, onChange }: { selection: Selection; on
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    void booking.submit({ studentId: persona.id, ...selection });
+    void booking.submit({ studentId: persona.id, ...selection, mode });
   };
 
   const options = stops.map((l) => (
@@ -91,6 +94,26 @@ export function BookingPanel({ selection, onChange }: { selection: Selection; on
             {options}
           </select>
         </div>
+
+        <fieldset className="flex flex-col gap-1.5" aria-describedby={modeHelpId}>
+          <legend className="mb-1 text-xs font-semibold text-muted">Ride type</legend>
+          <div className="grid grid-cols-2 gap-2" data-testid="mode-choice">
+            {(["solo", "shared"] as const).map((m) => (
+              <label
+                key={m}
+                className={`flex h-11 cursor-pointer items-center justify-center gap-2 rounded-tile text-sm font-semibold ring-1 ${mode === m ? "bg-brand-tint text-brand ring-brand" : "bg-surface text-ink ring-line"}`}
+              >
+                <input type="radio" name="ride-mode" value={m} checked={mode === m} disabled={submitting} onChange={() => setMode(m)} className="accent-[var(--color-brand)]" />
+                {m === "solo" ? "Solo" : "Shared"}
+              </label>
+            ))}
+          </div>
+          <p id={modeHelpId} className="text-[11px] text-muted" data-testid="mode-help">
+            {mode === "shared"
+              ? "Shared may combine your ride with compatible rides on the same cart. A match is not guaranteed: it depends on the live carts and trips when your ride is dispatched. Same fare."
+              : "Solo: a cart for your ride only."}
+          </p>
+        </fieldset>
 
         <FareLine />
 

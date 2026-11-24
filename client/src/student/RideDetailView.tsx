@@ -29,6 +29,8 @@ export function RideDetailView() {
   const rows: [string, string][] = [
     ["Request", r.id],
     ["Status", `${PHASE_LABEL[ride.phase]} (server status: ${r.status})`],
+    // Phase 4: shared rides only (solo rows are unchanged). Your ride's status above; the trip's below.
+    ...(r.mode === "shared" ? [["Ride type", "Shared (your own ride and fare; the cart's trip may carry other riders)"] as [string, string]] : []),
     ["Pickup", locationName(campus, r.pickupId)],
     ["Destination", locationName(campus, r.destinationId)],
     ["Cart", ride.cart?.label ?? ride.cartLabel ?? (ride.active ? "Not assigned yet" : "None")],

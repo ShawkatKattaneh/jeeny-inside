@@ -33,7 +33,9 @@ export function driverCartLink(data: StateSnapshot, persona: Persona): DriverCar
   return { carts, personaCartId, mismatch: personaCartId !== null && !carts.some((c) => c.id === personaCartId) };
 }
 
-export type DriverStage = "planned" | "to_pickup" | "at_pickup" | "to_destination" | "at_destination" | "cancelling" | "unknown";
+export type DriverStage = "planned" | "to_pickup" | "at_pickup" | "to_destination" | "at_destination" | "cancelling" | "unknown"
+  // Phase 4, shared trips: driving to the trip's next stop, or stopped at it.
+  | "to_stop" | "at_stop";
 
 /** One lifecycle step the server accepts now, bound to the exact request and trip it was derived from. */
 export interface ActionBinding {
@@ -46,13 +48,122 @@ export interface ActionBinding {
 
 export interface CartTrip {
   trip: Trip;
-  /** The trip's passenger request (solo trips carry exactly one), or null if it is not in the state. */
+  /** The trip's passenger request (solo trips carry exactly one), or null if it is not in the state. Always null for a shared trip: see `shared`. */
   request: RideRequest | null;
   stage: DriverStage;
-  /** The next step the server would accept now, or null. */
+  /** The next step the server would accept now, or null. For a shared trip, the first of `actions`. */
   next: ActionBinding | null;
+  /** Every step the server would accept now. A solo trip has at most one (`next`); a shared trip can have one per rider at the current stop. */
+  actions: ActionBinding[];
   /** Why no step is available right now (null when `next` is set). */
   unavailable: string | null;
+  /** Phase 4: the shared trip's riders and ordered stops, or null for a solo trip. */
+  shared: SharedTripView | null;
+}
+
+// ---------- Phase 4: shared trips ----------
+
+/** A rider's place in the trip, read from the trip's own passenger flags (never from being assigned alone). */
+export type RiderState = "waiting" | "on_board" | "dropped_off" | "cancelled";
+
+export interface SharedRider {
+  requestId: string;
+  /** From the rider's request; null if the request is not in the live state. */
+  request: RideRequest | null;
+  state: RiderState;
+}
+
+export interface SharedStop {
+  index: number;
+  locationId: string;
+  /** Riders boarding / leaving here (request ids), from the server's stop list. */
+  board: string[];
+  alight: string[];
+  /** done: before the trip's stopIndex; next: the stop the trip is serving now; later: after it. */
+  status: "done" | "next" | "later";
+}
+
+export interface SharedTripView {
+  riders: SharedRider[];
+  stops: SharedStop[];
+  /** Riders still part of the trip (not cancelled, not dropped off): the seats the trip has committed. */
+  committed: number;
+  /** Riders boarded and not yet dropped off. */
+  onBoard: number;
+  /** The cart's seats, or null if the cart is not in the state. */
+  seats: number | null;
+  /** The stop the trip is serving now, or null once every stop is done. */
+  nextStop: SharedStop | null;
+  /** True when the cart stands at `nextStop`'s location (the server's own cart position). */
+  atNextStop: boolean;
+}
+
+/**
+ * A trip is shown as shared when any of its riders asked to share or it carries more than one rider.
+ * Solo trips (one solo rider) keep the Phase 3 view and wording unchanged.
+ */
+export function isSharedTrip(data: StateSnapshot, trip: Trip): boolean {
+  if (trip.passengers.length > 1) return true;
+  return trip.passengers.some((p) => data.requests.find((r) => r.id === p.requestId)?.mode === "shared");
+}
+
+const riderState = (p: Trip["passengers"][number]): RiderState => (p.cancelled ? "cancelled" : p.droppedOff ? "dropped_off" : p.boarded ? "on_board" : "waiting");
+
+/**
+ * The driver's view of a shared trip. Actions mirror the server's per-rider rules (engine board /
+ * dropOff): a rider can be boarded or dropped off only at the trip's current stop, with the cart
+ * standing there, and only if that stop lists the rider for that event and the rider's flags and
+ * request status still allow it. The server re-checks everything and may refuse; nothing is changed
+ * locally. There is no action to add a rider: joins happen only through the server's dispatch.
+ */
+function sharedTripView(data: StateSnapshot, trip: Trip): CartTrip {
+  const cart = data.carts.find((c) => c.id === trip.cartId);
+  const req = (id: string) => data.requests.find((r) => r.id === id) ?? null;
+  const riders: SharedRider[] = trip.passengers.map((p) => ({ requestId: p.requestId, request: req(p.requestId), state: riderState(p) }));
+  const stops: SharedStop[] = trip.stops.map((st, index) => ({
+    index, locationId: st.locationId, board: [...st.board], alight: [...st.alight],
+    status: index < trip.stopIndex ? "done" : index === trip.stopIndex ? "next" : "later",
+  }));
+  const nextStop = stops[trip.stopIndex] ?? null;
+  const shared: SharedTripView = {
+    riders, stops, nextStop,
+    committed: trip.passengers.filter((p) => !p.cancelled && !p.droppedOff).length,
+    onBoard: trip.passengers.filter((p) => p.boarded && !p.droppedOff).length,
+    seats: cart?.seats ?? null,
+    atNextStop: !!nextStop && at(cart, nextStop.locationId),
+  };
+  const base = { trip, request: null, shared };
+  const done = (stage: DriverStage, unavailable: string): CartTrip => ({ ...base, stage, next: null, actions: [], unavailable });
+  const bind = (action: LifecycleAction, r: RideRequest): ActionBinding => ({ action, requestId: r.id, tripId: trip.id, expectedStatus: r.status });
+
+  if (trip.status === "cancelling") return done("cancelling", "The remaining waiting rider cancelled. The cart is finishing the path it was on.");
+  if (!cart) return done("unknown", "This trip's details are not in the live state yet.");
+  if (trip.status === "planned") {
+    // Starting is one trip-level step; the server takes it through any assigned rider's request.
+    const first = trip.passengers.map((p) => (p.cancelled ? null : req(p.requestId))).find((r) => r?.status === "assigned");
+    if (!first) return done("unknown", "This trip's details are not in the live state yet.");
+    const start = bind("start", first);
+    return { ...base, stage: "planned", next: start, actions: [start], unavailable: null };
+  }
+  if (trip.status !== "active" || !nextStop) return done("unknown", `No driver step for a ${trip.status} trip.`);
+  if (!shared.atNextStop) {
+    return done("to_stop", "Boarding and drop-off open when the cart reaches the next stop. The cart moves only when the simulation advances.");
+  }
+  const flags = new Map(trip.passengers.map((p) => [p.requestId, p]));
+  const actions: ActionBinding[] = [];
+  // Drop-offs first: they free seats for riders boarding at the same stop.
+  for (const id of nextStop.alight) {
+    const p = flags.get(id);
+    const r = req(id);
+    if (p && r && p.boarded && !p.droppedOff && r.status === "on_board") actions.push(bind("drop-off", r));
+  }
+  for (const id of nextStop.board) {
+    const p = flags.get(id);
+    const r = req(id);
+    if (p && r && !p.boarded && !p.cancelled && r.status === "arriving") actions.push(bind("board", r));
+  }
+  if (actions.length === 0) return done("at_stop", "Waiting for the live state to show this stop's riders.");
+  return { ...base, stage: "at_stop", next: actions[0]!, actions, unavailable: null };
 }
 
 const OPEN: readonly TripStatus[] = ["planned", "active", "cancelling"];
@@ -60,6 +171,14 @@ const at = (cart: Cart | undefined, locationId: string | undefined) => !!locatio
 
 /** Mirrors the server's preconditions for start / board / drop-off, so the UI only offers what it would accept. */
 export function tripView(data: StateSnapshot, trip: Trip): CartTrip {
+  if (isSharedTrip(data, trip)) return sharedTripView(data, trip);
+  return withSoloActions(soloTripView(data, trip));
+}
+
+const withSoloActions = (v: Omit<CartTrip, "actions" | "shared">): CartTrip => ({ ...v, actions: v.next ? [v.next] : [], shared: null });
+
+/** The Phase 3 solo view, unchanged. */
+function soloTripView(data: StateSnapshot, trip: Trip): Omit<CartTrip, "actions" | "shared"> {
   const requestId = trip.passengers[0]?.requestId;
   const request = data.requests.find((r) => r.id === requestId) ?? null;
   const cart = data.carts.find((c) => c.id === trip.cartId);
@@ -106,8 +225,8 @@ export function bindingStillValid(data: StateSnapshot | null, b: ActionBinding):
   if (!data) return false;
   const trip = data.trips.find((t) => t.id === b.tripId);
   if (!trip) return false;
-  const next = tripView(data, trip).next;
-  return !!next && next.action === b.action && next.requestId === b.requestId && next.expectedStatus === b.expectedStatus;
+  // A solo trip offers at most one step (its `next`), so this is the Phase 3 check; a shared trip can offer one per rider.
+  return tripView(data, trip).actions.some((a) => a.action === b.action && a.requestId === b.requestId && a.expectedStatus === b.expectedStatus);
 }
 
 export const STAGE_LABEL: Record<DriverStage, string> = {
@@ -118,6 +237,8 @@ export const STAGE_LABEL: Record<DriverStage, string> = {
   at_destination: "At destination",
   cancelling: "Cancelled, finishing path",
   unknown: "Waiting for details",
+  to_stop: "Driving to the next stop",
+  at_stop: "At a stop",
 };
 
 export const ACTION_LABEL: Record<LifecycleAction, string> = {

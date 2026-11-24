@@ -5,6 +5,7 @@ import { ACTION_LABEL, STAGE_LABEL, type CartTrip, type DriverStage } from "../l
 import { PrimaryButton } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { formatJod, formatSimTime, locationName } from "../student/format";
+import { SharedTripCard } from "./SharedTripCard";
 
 const STEPS: { stage: DriverStage; label: string }[] = [
   { stage: "planned", label: "Assigned" },
@@ -41,6 +42,18 @@ export function TripCard({ view, campus, personas, data, actions }: {
   view: CartTrip;
   campus: CampusConfig;
   /** Seeded demo personas from GET /api/personas, used only to show a name for an exactly matching studentId. */
+  personas: Persona[];
+  data: StateSnapshot;
+  actions: DriverActionController;
+}) {
+  if (view.shared) return <SharedTripCard view={view} shared={view.shared} campus={campus} personas={personas} data={data} actions={actions} />;
+  return <SoloTripCard view={view} campus={campus} personas={personas} data={data} actions={actions} />;
+}
+
+/** The Phase 3 solo trip card, unchanged. */
+function SoloTripCard({ view, campus, personas, data, actions }: {
+  view: CartTrip;
+  campus: CampusConfig;
   personas: Persona[];
   data: StateSnapshot;
   actions: DriverActionController;

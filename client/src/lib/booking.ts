@@ -45,6 +45,13 @@ export interface BookingInput {
   studentId: string;
   pickupId: string;
   destinationId: string;
+  /**
+   * Phase 4: "shared" asks the server to consider combining this ride with compatible ones. Solo is the
+   * default: a solo booking (mode omitted or "solo") sends exactly the pre-Phase-4 body, with no mode
+   * field, because the server already treats a missing mode as solo. Choosing shared never guarantees
+   * a match; only the server's dispatch decides.
+   */
+  mode?: "solo" | "shared";
 }
 
 export interface BookingController {
@@ -100,7 +107,12 @@ export function createBookingController(deps: {
       inFlight = true;
       set({ status: "submitting" });
       try {
-        const res = await deps.api.createRideRequest({ studentId: input.studentId, pickupId: input.pickupId, destinationId: input.destinationId });
+        const res = await deps.api.createRideRequest({
+          studentId: input.studentId,
+          pickupId: input.pickupId,
+          destinationId: input.destinationId,
+          ...(input.mode === "shared" ? { mode: "shared" as const } : {}),
+        });
         if (!res.ok) {
           set({ status: "error", message: res.message, code: res.code });
           return "failed";

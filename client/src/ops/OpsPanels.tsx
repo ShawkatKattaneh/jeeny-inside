@@ -3,8 +3,9 @@ import type { CampusConfig, Persona, StateSnapshot } from "../../../shared/schem
 import { MAX_SIMULATION_STEP_SECONDS } from "../../../shared/schemas";
 import type { AdvanceController, DispatchController } from "../lib/opsActions";
 import { checkAdvanceSeconds } from "../lib/opsActions";
-import { CART_STATUS_TEXT, REQUEST_STATUS_TEXT, TRIP_STATUS_TEXT, dispatchAvailability, type OpsMetrics } from "../lib/opsMetrics";
-import type { DispatchSelection } from "../lib/rideApi";
+import { CART_STATUS_TEXT, JOIN_EXCLUSION_TEXT, REQUEST_STATUS_TEXT, RIDER_STATE_TEXT, TRIP_STATUS_TEXT, dispatchAvailability, tripRiderCounts, type OpsMetrics } from "../lib/opsMetrics";
+import { isSharedTrip } from "../lib/driverWork";
+import type { DispatchResult, DispatchSelection, JoinCandidate } from "../lib/rideApi";
 import { Card } from "../ui/Card";
 import { formatSimTime, locationName } from "../student/format";
 import { cartWhere, driverText, simClock, studentText } from "./opsFormat";
@@ -119,10 +120,62 @@ export function SimulationPanel({ data, advance }: { data: StateSnapshot; advanc
 
 // ---------- Dispatch ----------
 
-function SelectionTable({ selection }: { selection: DispatchSelection }) {
+/** Signed seconds for the server's delay figures (planned driving time); display only, never compared to a limit here. */
+const signedSeconds = (n: number) => `${n > 0 ? "+" : ""}${Number(n.toFixed(1))} s`;
+
+/** One open trip as the server's shared dispatch judged it. Every figure and reason comes from the server. */
+function JoinCandidateRow({ c, campus, selectedTripId }: { c: JoinCandidate; campus: CampusConfig; selectedTripId: string | null | undefined }) {
+  return (
+    <li className="rounded-tile bg-white px-2 py-1 ring-1 ring-line" data-testid="join-candidate">
+      <b>{c.tripId}</b>{c.cartId ? <> on {c.cartId}</> : null}{c.stage ? <span className="text-muted"> ({c.stage === "planned" ? "planned trip" : "moving, nobody on board"})</span> : null}{" "}
+      {c.eligible ? (
+        <>
+          <span>can join: rank {c.rank}{c.tripId === selectedTripId ? " (joined)" : ""}</span>
+          {c.stopLocationIds && <span className="block text-muted">Stops after joining: {c.stopLocationIds.map((id) => locationName(campus, id)).join(" → ")}</span>}
+          {c.riders && (
+            <span className="block text-muted">
+              Added planned driving time vs riding alone (server figures):{" "}
+              {c.riders.map((r) => `${r.requestId}${r.joining ? " (new)" : ""}: wait ${r.waitDelaySeconds === null ? "n/a (on board)" : signedSeconds(r.waitDelaySeconds)}, journey ${signedSeconds(r.journeyDelaySeconds)}`).join("; ")}
+            </span>
+          )}
+        </>
+      ) : (
+        <span className="text-muted" data-testid="join-excluded">
+          not joinable: {(c.excludedCode && JOIN_EXCLUSION_TEXT[c.excludedCode]) ?? c.excludedCode ?? "no reason given"}
+          {c.excludedReason && <span className="block">Server: {c.excludedReason}</span>}
+        </span>
+      )}
+    </li>
+  );
+}
+
+/** The shared part of a selection (Phase 4): the outcome and every open trip the server checked. Nothing is re-ranked or re-checked here. */
+function SharedSelection({ selection, campus }: { selection: DispatchSelection; campus: CampusConfig }) {
+  const outcome = selection.outcome === "joined"
+    ? `Joined ${selection.selectedTripId ?? "an existing trip"} on ${selection.selectedCartId ?? "its cart"}.`
+    : selection.outcome === "new_cart"
+      ? `No open trip could take it, so it got its own cart (${selection.selectedCartId}). Other shared riders may join that trip later.`
+      : "Neither joined a trip nor got a cart.";
+  return (
+    <div className="mt-2 flex flex-col gap-1" data-testid="shared-selection">
+      <p className="font-semibold" data-testid="shared-outcome">Shared ride: {outcome}</p>
+      {selection.joinCandidates && selection.joinCandidates.length > 0 ? (
+        <ul className="flex flex-col gap-1">
+          {selection.joinCandidates.map((c) => <JoinCandidateRow key={c.tripId} c={c} campus={campus} selectedTripId={selection.selectedTripId} />)}
+        </ul>
+      ) : (
+        <p className="text-muted">No open trips to join.</p>
+      )}
+      {selection.maxAddedDelaySeconds !== undefined && <p className="text-muted">Delay limit used by the server: {selection.maxAddedDelaySeconds} s per rider, measured in planned driving time.</p>}
+    </div>
+  );
+}
+
+function SelectionTable({ selection, campus }: { selection: DispatchSelection; campus: CampusConfig }) {
   return (
     <div className="text-xs">
       <p className="mb-1 text-muted">{selection.policy}</p>
+      {selection.mode === "shared" && <p className="mb-1 font-semibold">Carts checked for riding alone (the rank 1 cart gives the rider's solo baseline):</p>}
       <ul className="flex flex-col gap-1">
         {selection.candidates.map((c) => (
           <li key={c.cartId} className="rounded-tile bg-white px-2 py-1 ring-1 ring-line">
@@ -133,8 +186,17 @@ function SelectionTable({ selection }: { selection: DispatchSelection }) {
           </li>
         ))}
       </ul>
+      {selection.mode === "shared" && <SharedSelection selection={selection} campus={campus} />}
     </div>
   );
+}
+
+/** The success line: a solo dispatch keeps its Phase 3 wording; a shared one names the server's outcome. */
+function dispatchedText(requestId: string, result: DispatchResult): string {
+  const cart = `${result.cart.label} (${result.cart.id})`;
+  if (result.selection.outcome === "joined") return `${requestId} joined shared trip ${result.trip.id} on ${cart}, by the server.`;
+  if (result.selection.outcome === "new_cart") return `${requestId} (shared) dispatched to ${cart} on a new trip, by the server.`;
+  return `${requestId} dispatched to ${cart} by the server.`;
 }
 
 /**
@@ -159,7 +221,7 @@ export function DispatchPanel({ data, campus, personas, dispatch, onSelect }: { 
           {waiting.map((r) => (
             <li key={r.id} className="flex flex-col gap-2 rounded-tile bg-surface px-3 py-2 sm:flex-row sm:items-center" data-testid="dispatch-item">
               <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onSelect({ kind: "request", id: r.id })}>
-                <span className="block text-sm font-bold">{r.id} · {studentText(r.studentId, personas)}</span>
+                <span className="block text-sm font-bold">{r.id} · {studentText(r.studentId, personas)}{r.mode === "shared" && <span className="ml-1 text-xs text-brand">Shared</span>}</span>
                 <span className="block truncate text-xs text-muted">{locationName(campus, r.pickupId)} → {locationName(campus, r.destinationId)} · {formatSimTime(r.createdAt)} · awaiting dispatch evaluation</span>
               </button>
               <button type="button" disabled={pending} aria-busy={pending && state.requestId === r.id} onClick={() => void dispatch.submit(r.id)}
@@ -172,14 +234,14 @@ export function DispatchPanel({ data, campus, personas, dispatch, onSelect }: { 
       )}
       {state.status === "success" && (
         <div role="status" className="flex flex-col gap-2 rounded-tile bg-green-50 px-3 py-2 text-xs" data-testid="dispatch-success">
-          <p className="text-sm font-semibold text-success">{state.requestId} dispatched to {state.result.cart.label} ({state.result.cart.id}) by the server.</p>
-          <SelectionTable selection={state.result.selection} />
+          <p className="text-sm font-semibold text-success">{dispatchedText(state.requestId, state.result)}</p>
+          <SelectionTable selection={state.result.selection} campus={campus} />
         </div>
       )}
       {state.status === "error" && (
         <div role="alert" className="flex flex-col gap-2 rounded-tile bg-red-50 px-3 py-2 text-xs" data-testid="dispatch-error">
           <p className="text-sm font-semibold text-danger">{state.requestId} not dispatched: {state.message}</p>
-          {state.selection && <SelectionTable selection={state.selection} />}
+          {state.selection && <SelectionTable selection={state.selection} campus={campus} />}
         </div>
       )}
     </Card>
@@ -233,7 +295,7 @@ export function RidesTables({ data, campus, personas, selected, onSelect }: { da
               <tbody className="divide-y divide-line">
                 {requests.map((r) => (
                   <tr key={r.id} className={selected?.kind === "request" && selected.id === r.id ? "bg-brand-tint" : ""} data-testid="request-row">
-                    <td className={td}><button type="button" className="font-bold hover:underline" onClick={() => onSelect({ kind: "request", id: r.id })}>{r.id}</button><div className="text-[11px] text-muted">{studentText(r.studentId, personas)}</div></td>
+                    <td className={td}><button type="button" className="font-bold hover:underline" onClick={() => onSelect({ kind: "request", id: r.id })}>{r.id}</button><div className="text-[11px] text-muted">{studentText(r.studentId, personas)}</div>{r.mode === "shared" && <div className="text-[11px] font-bold text-brand">Shared</div>}</td>
                     <td className={td}>{REQUEST_STATUS_TEXT[r.status]}</td>
                     <td className={td}>{locationName(campus, r.pickupId)} → {locationName(campus, r.destinationId)}</td>
                   </tr>
@@ -252,10 +314,16 @@ export function RidesTables({ data, campus, personas, selected, onSelect }: { da
               <tbody className="divide-y divide-line">
                 {trips.map((t) => (
                   <tr key={t.id} className={selected?.kind === "trip" && selected.id === t.id ? "bg-brand-tint" : ""} data-testid="trip-row">
-                    <td className={td}><button type="button" className="font-bold hover:underline" onClick={() => onSelect({ kind: "trip", id: t.id })}>{t.id}</button></td>
+                    <td className={td}><button type="button" className="font-bold hover:underline" onClick={() => onSelect({ kind: "trip", id: t.id })}>{t.id}</button>{isSharedTrip(data, t) && <div className="text-[11px] font-bold text-brand" data-testid="trip-shared">Shared</div>}</td>
                     <td className={td}>{TRIP_STATUS_TEXT[t.status]}</td>
                     <td className={td}>{t.cartId}</td>
-                    <td className={td}>{t.passengers.map((p) => p.requestId).join(", ")}</td>
+                    <td className={td}>
+                      {t.passengers.map((p) => p.requestId).join(", ")}
+                      {isSharedTrip(data, t) && (() => {
+                        const n = tripRiderCounts(t);
+                        return <div className="text-[11px] text-muted" data-testid="trip-riders">{n.committed} committed · {n.onBoard} on board</div>;
+                      })()}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -282,6 +350,7 @@ export function DetailsPanel({ data, campus, personas, selected, onClear }: { da
       title = `${c.label} (${c.id})`;
       rows.push(["Cart status", CART_STATUS_TEXT[c.status]], ["Driver", driverText(c, personas)], ["Battery", `${Math.round(c.batteryPercent)}%`], ["Range", `${c.rangeKm} km`],
         ["On board", `${c.passengerCount} of ${c.seats} seats`], ["Top speed", `${c.maxSpeedKmh} km/h`], ["Location", cartWhere(c, campus)], ["Open trip", open ? `${open.id} (${TRIP_STATUS_TEXT[open.status]})` : "None"], ["Simulated", c.simulated ? "Yes" : "No"]);
+      if (open && isSharedTrip(data, open)) rows.push(["Committed riders", `${tripRiderCounts(open).committed} of ${c.seats} seats (shared trip ${open.id}; on board counts only riders who boarded)`]);
     }
   } else if (selected.kind === "request") {
     const r = data.requests.find((x) => x.id === selected.id);
@@ -294,8 +363,19 @@ export function DetailsPanel({ data, campus, personas, selected, onClear }: { da
   } else {
     const t = data.trips.find((x) => x.id === selected.id);
     if (t) {
-      rows.push(["Trip status", TRIP_STATUS_TEXT[t.status]], ["Cart", t.cartId], ["Passengers", t.passengers.map((p) => `${p.requestId}${p.boarded ? " (boarded)" : " (not boarded)"}`).join(", ")],
-        ["Stops", t.stops.map((s, i) => `${i + 1}. ${locationName(campus, s.locationId)}`).join("  ")], ["Next stop", t.stopIndex < t.stops.length ? locationName(campus, t.stops[t.stopIndex]!.locationId) : "All stops done"],
+      const shared = isSharedTrip(data, t);
+      const riderText = (p: (typeof t.passengers)[number]) => RIDER_STATE_TEXT[p.cancelled ? "cancelled" : p.droppedOff ? "dropped_off" : p.boarded ? "on_board" : "waiting"];
+      const counts = tripRiderCounts(t);
+      const seats = data.carts.find((c) => c.id === t.cartId)?.seats;
+      rows.push(["Trip status", TRIP_STATUS_TEXT[t.status]], ["Cart", t.cartId]);
+      if (shared) rows.push(["Ride type", "Shared"], ["Riders", `${counts.committed} committed${seats !== undefined ? ` of ${seats} seats` : ""}, ${counts.onBoard} on board, ${counts.total} in total`]);
+      rows.push(
+        ["Passengers", shared
+          ? t.passengers.map((p) => `${p.requestId} (${riderText(p)})`).join(", ")
+          : t.passengers.map((p) => `${p.requestId}${p.boarded ? " (boarded)" : " (not boarded)"}`).join(", ")],
+        ["Stops", shared
+          ? t.stops.map((s, i) => `${i + 1}. ${locationName(campus, s.locationId)}${s.board.length ? ` [pick up ${s.board.join(", ")}]` : ""}${s.alight.length ? ` [drop off ${s.alight.join(", ")}]` : ""}`).join("  ")
+          : t.stops.map((s, i) => `${i + 1}. ${locationName(campus, s.locationId)}`).join("  ")], ["Next stop", t.stopIndex < t.stops.length ? locationName(campus, t.stops[t.stopIndex]!.locationId) : "All stops done"],
         ["Current leg", t.leg ? t.leg.locationIds.map((id) => locationName(campus, id)).join(" → ") : "None"]);
     }
   }

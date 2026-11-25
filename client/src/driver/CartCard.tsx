@@ -20,7 +20,7 @@ export function CartCard({ cart, campus }: { cart: Cart; campus: CampusConfig })
         </div>
         <div className="flex flex-col items-end gap-1">
           <span className="rounded-full bg-surface px-3 py-1 text-[13px] font-bold text-ink" data-testid="cart-status">{CART_STATUS_LABEL[cart.status]}</span>
-          {cart.simulated && <Badge tone="simulated">Simulated</Badge>}
+          {cart.simulated && <Badge tone="simulated" emphasis="strong">Simulated</Badge>}
         </div>
       </div>
       <dl className="grid grid-cols-3 gap-2 text-center">

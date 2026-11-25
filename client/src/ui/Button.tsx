@@ -5,7 +5,7 @@ export function PrimaryButton({ className = "", ...props }: ButtonHTMLAttributes
   return (
     <button
       {...props}
-      className={`h-button w-full rounded-full bg-brand px-6 text-base font-bold text-white transition active:scale-[0.99] active:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
+      className={`h-button w-full rounded-full bg-brand px-6 text-base font-bold text-white transition active:scale-[0.99] active:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${className}`}
     />
   );
 }

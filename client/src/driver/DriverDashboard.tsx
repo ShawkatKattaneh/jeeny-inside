@@ -72,7 +72,7 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
     return (
       <>
         {header}
-        <p role="alert" className="rounded-tile bg-red-50 px-4 py-3 text-sm text-danger">
+        <p role="alert" className="rounded-tile bg-red-50 px-4 py-3 text-sm text-ink">
           The server is now running a different campus. Reload the page to continue.
         </p>
       </>
@@ -80,7 +80,7 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
   }
 
   const mismatchNote = link.mismatch && (
-    <p className="rounded-tile bg-amber-50 px-4 py-3 text-xs text-warning" data-testid="cart-mismatch">
+    <p className="rounded-tile bg-amber-50 px-4 py-3 text-[13px] text-warning" data-testid="cart-mismatch">
       Your demo profile lists {link.personaCartId}, but the live fleet {link.carts.length ? `assigns you ${link.carts.map((c) => c.id).join(", ")}` : "does not assign you any cart"}. Driver Mode follows the live fleet.
     </p>
   );
@@ -105,7 +105,7 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
 
       {link.carts.length > 1 && (
         <Card className="p-4">
-          <label htmlFor="cart-select" className="mb-1 block text-xs font-semibold text-muted">The live fleet lists you as the driver of {link.carts.length} carts. Choose one.</label>
+          <label htmlFor="cart-select" className="mb-1 block text-[13px] font-semibold text-muted">The live fleet lists you as the driver of {link.carts.length} carts. Choose one.</label>
           <select
             id="cart-select"
             className="h-12 w-full rounded-tile bg-surface px-3 text-sm font-semibold ring-1 ring-line"
@@ -139,7 +139,7 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
               <>
                 {trips.length > 1 && (
                   <Card className="p-4" data-testid="trip-picker">
-                    <p className="mb-2 text-xs font-semibold text-muted">{trips.length} open trips are assigned to {cart.label}. Choose the one to work on.</p>
+                    <p className="mb-2 text-[13px] font-semibold text-muted">{trips.length} open trips are assigned to {cart.label}. Choose the one to work on.</p>
                     <ul className="flex flex-col gap-2">
                       {trips.map((t) => (
                         <li key={t.trip.id}>
@@ -148,10 +148,10 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
                             aria-pressed={view?.trip.id === t.trip.id}
                             disabled={actionState.status === "pending"}
                             onClick={() => { setSelectedTripId(t.trip.id); actions.reset(); }}
-                            className={`flex w-full items-center justify-between rounded-tile px-3 py-2 text-left text-sm ring-1 ${view?.trip.id === t.trip.id ? "bg-brand-tint ring-brand" : "bg-surface ring-line"}`}
+                            className={`flex min-h-11 w-full items-center justify-between rounded-tile px-3 py-2 text-left text-sm ring-1 ${view?.trip.id === t.trip.id ? "bg-brand-tint ring-brand" : "bg-surface ring-line"}`}
                           >
                             <span className="font-semibold">{t.trip.id}</span>
-                            <span className="text-xs text-muted">{STAGE_LABEL[t.stage]}</span>
+                            <span className="text-[13px] text-muted">{STAGE_LABEL[t.stage]}</span>
                           </button>
                         </li>
                       ))}
@@ -178,7 +178,7 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
                   })(),
                 }}
               />
-              <figcaption className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
+              <figcaption className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
                 {campus.fictional && <Badge>Fictional campus</Badge>}
                 <span>Demo campus map: schematic, not to scale, not GPS. Your cart is shown at its simulated position; it moves only when the simulation advances.</span>
               </figcaption>

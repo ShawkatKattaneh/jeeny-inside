@@ -25,7 +25,7 @@ function Steps({ stage }: { stage: DriverStage }) {
       {STEPS.map((s, i) => (
         <li key={s.stage} className="flex flex-col items-center gap-1 text-center" aria-current={i === current ? "step" : undefined}>
           <span className={`h-1.5 w-full rounded-full ${i <= current ? "bg-brand" : "bg-line"}`} aria-hidden="true" />
-          <span className={`text-[10px] leading-tight ${i === current ? "font-bold text-ink" : "text-muted"}`}>
+          <span className={`text-[13px] leading-tight ${i === current ? "font-bold text-ink" : "text-muted"}`}>
             {s.label}
             <span className="sr-only">{i < current ? " (done)" : i === current ? " (current)" : " (not yet)"}</span>
           </span>
@@ -71,7 +71,7 @@ function SoloTripCard({ view, campus, personas, data, actions }: {
     <Card className="flex flex-col gap-3 p-4" role="region" aria-labelledby={`trip-${trip.id}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-xs text-muted">Trip assigned to your cart · {trip.id}</div>
+          <div className="text-[13px] text-muted">Trip assigned to your cart · {trip.id}</div>
           <h2 id={`trip-${trip.id}`} className="text-lg font-extrabold tracking-tight" data-testid="trip-stage">{STAGE_LABEL[stage]}</h2>
         </div>
       </div>
@@ -93,26 +93,26 @@ function SoloTripCard({ view, campus, personas, data, actions }: {
         {request && (
           <>
             <dt className="text-muted">Fare</dt>
-            <dd>{formatJod(request.fareJod)} <span className="text-xs text-muted">(simulated, no payment)</span></dd>
+            <dd>{formatJod(request.fareJod)} <span className="text-[13px] text-muted">(simulated, no payment)</span></dd>
             <dt className="text-muted">Requested</dt>
             <dd>{request.id} · {formatSimTime(request.createdAt)}</dd>
           </>
         )}
       </dl>
 
-      <div className="flex flex-wrap gap-1.5 text-[11px]" aria-label="Server statuses">
+      <div className="flex flex-wrap gap-1.5 text-[13px]" aria-label="Server statuses">
         <span className="rounded-full bg-surface px-2 py-0.5 text-muted">Ride: <b className="text-ink">{request?.status ?? "unknown"}</b></span>
         <span className="rounded-full bg-surface px-2 py-0.5 text-muted">Trip: <b className="text-ink">{trip.status}</b></span>
         <span className="rounded-full bg-surface px-2 py-0.5 text-muted">Cart: <b className="text-ink">{cart?.status ?? "unknown"}</b></span>
       </div>
 
       {forThisTrip && state.status === "error" && (
-        <p role="alert" className="rounded-tile bg-red-50 px-3 py-2 text-sm text-danger" data-testid="action-error">
+        <p role="alert" className="rounded-tile bg-red-50 px-3 py-2 text-sm text-ink" data-testid="action-error">
           {ACTION_LABEL[state.binding.action]} failed: {state.message}
         </p>
       )}
       {forThisTrip && state.status === "success" && (
-        <p role="status" className="rounded-tile bg-green-50 px-3 py-2 text-sm text-success" data-testid="action-success">
+        <p role="status" className="rounded-tile bg-green-50 px-3 py-2 text-sm text-ink" data-testid="action-success">
           {state.message}
         </p>
       )}
@@ -130,7 +130,7 @@ function SoloTripCard({ view, campus, personas, data, actions }: {
       ) : (
         <p className="rounded-tile bg-surface px-3 py-2 text-sm text-muted" data-testid="trip-unavailable">{unavailable}</p>
       )}
-      {pending && <p className="text-center text-xs text-muted" role="status">Waiting for the server to confirm…</p>}
+      {pending && <p className="text-center text-[13px] text-muted" role="status">Waiting for the server to confirm…</p>}
     </Card>
   );
 }

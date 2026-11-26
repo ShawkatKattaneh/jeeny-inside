@@ -1,6 +1,7 @@
-import { useId, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import type { CampusConfig, Persona, StateSnapshot } from "../../../shared/schemas";
 import { MAX_SIMULATION_STEP_SECONDS } from "../../../shared/schemas";
+import { SETTINGS } from "../../../shared/settings";
 import type { AdvanceController, DispatchController } from "../lib/opsActions";
 import { checkAdvanceSeconds } from "../lib/opsActions";
 import { CART_STATUS_TEXT, JOIN_EXCLUSION_TEXT, REQUEST_STATUS_TEXT, RIDER_STATE_TEXT, TRIP_STATUS_TEXT, dispatchAvailability, tripRiderCounts, type OpsMetrics } from "../lib/opsMetrics";
@@ -18,9 +19,9 @@ export type Selected = { kind: "cart" | "request" | "trip"; id: string } | null;
 function Tile({ label, value, hint, testId }: { label: string; value: number | string; hint?: string; testId?: string }) {
   return (
     <div className="rounded-tile bg-surface px-3 py-2">
-      <div className="text-[11px] text-muted">{label}</div>
+      <div className="text-[13px] text-muted">{label}</div>
       <div className="text-xl font-extrabold" data-testid={testId}>{value}</div>
-      {hint && <div className="text-[10px] text-muted">{hint}</div>}
+      {hint && <div className="text-[13px] text-muted">{hint}</div>}
     </div>
   );
 }
@@ -28,10 +29,10 @@ function Tile({ label, value, hint, testId }: { label: string; value: number | s
 function StatusRow<K extends string>({ title, counts, text, testPrefix }: { title: string; counts: Record<K, number>; text: Record<K, string>; testPrefix: string }) {
   return (
     <div>
-      <h3 className="mb-1 text-xs font-bold text-muted">{title}</h3>
+      <h3 className="mb-1 text-[13px] font-bold text-muted">{title}</h3>
       <ul className="flex flex-wrap gap-1.5">
         {(Object.keys(text) as K[]).map((k) => (
-          <li key={k} className={`rounded-full px-2.5 py-0.5 text-xs ${counts[k] ? "bg-ink text-white" : "bg-surface text-muted"}`} data-testid={`${testPrefix}-${k}`}>
+          <li key={k} className={`rounded-full px-2.5 py-0.5 text-[13px] ${counts[k] ? "bg-ink text-white" : "bg-surface text-muted"}`} data-testid={`${testPrefix}-${k}`}>
             {text[k]} <b>{counts[k]}</b>
           </li>
         ))}
@@ -43,7 +44,7 @@ function StatusRow<K extends string>({ title, counts, text, testPrefix }: { titl
 /** Every figure is a count over one snapshot; carts, requests and trips are counted separately. */
 export function MetricsPanel({ m }: { m: OpsMetrics }) {
   return (
-    <Card className="flex flex-col gap-3 p-4" role="region" aria-label="Live counts">
+    <Card id="ops-overview" className="scroll-mt-4 flex flex-col gap-3 p-4" role="region" aria-label="Live counts">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Tile label="Carts in fleet" value={m.carts.total} testId="m-carts" />
         <Tile label="Idle carts" value={m.carts.byStatus.idle} hint="Idle is a cart status, not a dispatch promise" testId="m-idle" />
@@ -76,42 +77,42 @@ export function SimulationPanel({ data, advance }: { data: StateSnapshot; advanc
   const moving = data.trips.filter((t) => t.status === "active" || t.status === "cancelling").length;
 
   return (
-    <Card className="flex flex-col gap-3 p-4" role="region" aria-labelledby="sim-title">
+    <Card id="ops-simulation" className="scroll-mt-4 flex flex-col gap-3 p-4" role="region" aria-labelledby="sim-title">
       <div className="flex items-baseline justify-between gap-2">
         <h2 id="sim-title" className="text-base font-extrabold">Simulation</h2>
-        <span className="text-xs text-muted">Simulation time, not clock time</span>
+        <span className="text-[13px] text-muted">Simulation time, not clock time</span>
       </div>
       <div className="rounded-tile bg-surface px-3 py-2">
-        <div className="text-[11px] text-muted">Simulation clock (from the live state)</div>
+        <div className="text-[13px] text-muted">Simulation clock (from the live state)</div>
         <div className="text-2xl font-extrabold tabular-nums" data-testid="sim-clock">{simClock(data.clockSeconds)}</div>
-        <div className="text-[11px] text-muted">{moving} moving trip{moving === 1 ? "" : "s"}. Carts move only when you advance.</div>
+        <div className="text-[13px] text-muted">{moving} moving trip{moving === 1 ? "" : "s"}. Carts move only when you advance.</div>
       </div>
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Preset durations">
         {PRESETS.map((p) => (
           <button key={p} type="button" disabled={pending} onClick={() => setValue(String(p))}
-            className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${Number(value) === p ? "bg-ink text-white ring-ink" : "ring-line"}`}>
+            className={`min-h-11 rounded-full px-3 py-1 text-[13px] font-semibold ring-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${Number(value) === p ? "bg-ink text-white ring-ink" : "ring-line"}`}>
             {p < 60 ? `${p} s` : `${p / 60} min`}
           </button>
         ))}
       </div>
       <div>
-        <label htmlFor={inputId} className="mb-1 block text-xs font-semibold text-muted">Seconds to advance (more than 0, up to {MAX_SIMULATION_STEP_SECONDS})</label>
+        <label htmlFor={inputId} className="mb-1 block text-[13px] font-semibold text-muted">Seconds to advance (more than 0, up to {MAX_SIMULATION_STEP_SECONDS})</label>
         <input id={inputId} type="number" inputMode="decimal" min={0} max={MAX_SIMULATION_STEP_SECONDS} step="any" value={value} disabled={pending}
           onChange={(e) => setValue(e.target.value)} aria-invalid={!check.ok || undefined}
           className="h-11 w-full rounded-tile bg-surface px-3 text-sm font-semibold ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-brand" />
-        {!check.ok && <p className="mt-1 text-xs text-danger" data-testid="sim-invalid">{check.message}</p>}
+        {!check.ok && <p className="mt-1 text-[13px] text-danger" data-testid="sim-invalid">{check.message}</p>}
       </div>
       <button type="button" disabled={pending || !check.ok} aria-busy={pending} onClick={() => void advance.submit(seconds)}
-        className="h-11 rounded-full bg-brand px-4 text-sm font-bold text-white disabled:opacity-40" data-testid="sim-advance">
+        className="h-11 rounded-full bg-brand px-4 text-sm font-bold text-white disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" data-testid="sim-advance">
         {pending ? `Advancing ${state.seconds} s…` : check.ok ? `Advance ${check.seconds} s` : "Advance"}
       </button>
       {state.status === "success" && (
-        <p role="status" className="rounded-tile bg-green-50 px-3 py-2 text-xs text-success" data-testid="sim-success">
+        <p role="status" className="rounded-tile bg-green-50 px-3 py-2 text-[13px] text-ink" data-testid="sim-success">
           Requested +{state.seconds} s. Server confirmed simulation clock {simClock(state.clockSeconds)}.
         </p>
       )}
       {state.status === "error" && (
-        <p role="alert" className="rounded-tile bg-red-50 px-3 py-2 text-xs text-danger" data-testid="sim-error">
+        <p role="alert" className="rounded-tile bg-red-50 px-3 py-2 text-[13px] text-ink" data-testid="sim-error">
           Not advanced: {state.message}
         </p>
       )}
@@ -174,7 +175,7 @@ function SharedSelection({ selection, campus }: { selection: DispatchSelection; 
 
 function SelectionTable({ selection, campus }: { selection: DispatchSelection; campus: CampusConfig }) {
   return (
-    <div className="text-xs">
+    <div className="text-[13px]">
       <p className="mb-1 text-muted">{selection.policy}</p>
       {selection.mode === "shared" && <p className="mb-1 font-semibold">Carts checked for riding alone (the rank 1 cart gives the rider's solo baseline):</p>}
       <ul className="flex flex-col gap-1">
@@ -210,10 +211,10 @@ export function DispatchPanel({ data, campus, personas, dispatch, onSelect }: { 
   const pending = state.status === "pending";
 
   return (
-    <Card className="flex flex-col gap-3 p-4" role="region" aria-labelledby="dispatch-title">
+    <Card id="ops-dispatch" className="scroll-mt-4 flex flex-col gap-3 p-4" role="region" aria-labelledby="dispatch-title">
       <div className="flex items-baseline justify-between gap-2">
         <h2 id="dispatch-title" className="text-base font-extrabold">Dispatch</h2>
-        <span className="text-xs text-muted">Deterministic engine, one request per action</span>
+        <span className="text-[13px] text-muted">Deterministic engine, one request per action</span>
       </div>
       {waiting.length === 0 ? (
         <p className="rounded-tile bg-surface px-3 py-4 text-center text-sm text-muted" data-testid="dispatch-empty">No requests awaiting dispatch.</p>
@@ -221,12 +222,12 @@ export function DispatchPanel({ data, campus, personas, dispatch, onSelect }: { 
         <ul className="flex flex-col gap-2">
           {waiting.map((r) => (
             <li key={r.id} className="flex flex-col gap-2 rounded-tile bg-surface px-3 py-2 sm:flex-row sm:items-center" data-testid="dispatch-item">
-              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onSelect({ kind: "request", id: r.id })}>
-                <span className="block text-sm font-bold">{r.id} · {studentText(r.studentId, personas)}{r.mode === "shared" && <span className="ml-1 text-xs text-brand">Shared</span>}</span>
-                <span className="block truncate text-xs text-muted">{locationName(campus, r.pickupId)} → {locationName(campus, r.destinationId)} · {formatSimTime(r.createdAt)} · awaiting dispatch evaluation</span>
+              <button type="button" className="min-h-11 min-w-0 flex-1 rounded-tile text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" onClick={() => onSelect({ kind: "request", id: r.id })}>
+                <span className="block text-sm font-bold">{r.id} · {studentText(r.studentId, personas)}{r.mode === "shared" && <span className="ml-1 text-[13px] text-brand">Shared</span>}</span>
+                <span className="block truncate text-[13px] text-muted">{locationName(campus, r.pickupId)} → {locationName(campus, r.destinationId)} · {formatSimTime(r.createdAt)} · awaiting dispatch evaluation</span>
               </button>
               <button type="button" disabled={pending} aria-busy={pending && state.requestId === r.id} onClick={() => void dispatch.submit(r.id)}
-                className="h-10 shrink-0 rounded-full bg-ink px-4 text-sm font-bold text-white disabled:opacity-40">
+                className="h-11 shrink-0 rounded-full bg-ink px-4 text-sm font-bold text-white disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
                 {pending && state.requestId === r.id ? "Dispatching…" : `Dispatch ${r.id}`}
               </button>
             </li>
@@ -234,14 +235,14 @@ export function DispatchPanel({ data, campus, personas, dispatch, onSelect }: { 
         </ul>
       )}
       {state.status === "success" && (
-        <div role="status" className="flex flex-col gap-2 rounded-tile bg-green-50 px-3 py-2 text-xs" data-testid="dispatch-success">
-          <p className="text-sm font-semibold text-success">{dispatchedText(state.requestId, state.result)}</p>
+        <div role="status" className="flex flex-col gap-2 rounded-tile bg-green-50 px-3 py-2 text-[13px]" data-testid="dispatch-success">
+          <p className="text-sm font-semibold text-ink">{dispatchedText(state.requestId, state.result)}</p>
           <SelectionTable selection={state.result.selection} campus={campus} />
         </div>
       )}
       {state.status === "error" && (
-        <div role="alert" className="flex flex-col gap-2 rounded-tile bg-red-50 px-3 py-2 text-xs" data-testid="dispatch-error">
-          <p className="text-sm font-semibold text-danger">{state.requestId} not dispatched: {state.message}</p>
+        <div role="alert" className="flex flex-col gap-2 rounded-tile bg-red-50 px-3 py-2 text-[13px]" data-testid="dispatch-error">
+          <p className="text-sm font-semibold text-ink">{state.requestId} not dispatched: {state.message}</p>
           {state.selection && <SelectionTable selection={state.selection} campus={campus} />}
         </div>
       )}
@@ -251,13 +252,13 @@ export function DispatchPanel({ data, campus, personas, dispatch, onSelect }: { 
 
 // ---------- Tables ----------
 
-const th = "px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted";
+const th = "px-3 py-2 text-left text-[13px] font-semibold uppercase tracking-wide text-muted";
 const td = "px-3 py-2 align-top";
 
 export function FleetTable({ data, campus, personas, selected, onSelect }: { data: StateSnapshot; campus: CampusConfig; personas: Persona[]; selected: Selected; onSelect: (s: Selected) => void }) {
   return (
-    <Card className="overflow-hidden" role="region" aria-labelledby="fleet-title">
-      <h2 id="fleet-title" className="border-b border-line px-4 py-3 text-base font-extrabold">Fleet <span className="text-xs font-normal text-muted">({data.carts.length} carts, simulated)</span></h2>
+    <Card id="ops-fleet" className="scroll-mt-4 overflow-hidden" role="region" aria-labelledby="fleet-title">
+      <h2 id="fleet-title" className="border-b border-line px-4 py-3 text-base font-extrabold">Fleet <span className="text-[13px] font-normal text-muted">({data.carts.length} carts, simulated)</span></h2>
       {data.carts.length === 0 ? <p className="px-4 py-4 text-sm text-muted">No carts in the fleet.</p> : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[42rem] text-sm">
@@ -265,10 +266,17 @@ export function FleetTable({ data, campus, personas, selected, onSelect }: { dat
             <tbody className="divide-y divide-line">
               {data.carts.map((c) => (
                 <tr key={c.id} className={selected?.kind === "cart" && selected.id === c.id ? "bg-brand-tint" : ""} data-testid="fleet-row">
-                  <td className={td}><button type="button" className="font-bold underline-offset-2 hover:underline" onClick={() => onSelect({ kind: "cart", id: c.id })}>{c.label}</button><div className="text-[11px] text-muted">{c.id}</div></td>
+                  <td className={`${td} border-l-4 ${selected?.kind === "cart" && selected.id === c.id ? "border-brand" : "border-transparent"}`}><button type="button" aria-pressed={selected?.kind === "cart" && selected.id === c.id} className="inline-flex min-h-11 items-center font-bold underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" onClick={() => onSelect({ kind: "cart", id: c.id })}>{c.label}</button><div className={`text-[13px] ${selected?.kind === "cart" && selected.id === c.id ? "text-ink" : "text-muted"}`}>{c.id}</div></td>
                   <td className={td}>{CART_STATUS_TEXT[c.status]}</td>
                   <td className={td}>{driverText(c, personas)}</td>
-                  <td className={td}>{Math.round(c.batteryPercent)}%</td>
+                  <td className={td}>
+                    {Math.round(c.batteryPercent)}%
+                    {c.batteryPercent < SETTINGS.batteryReservePercent && (
+                      <div className="mt-1 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[13px] font-semibold text-ink ring-1 ring-amber-200" data-testid="fleet-battery-low">
+                        Below {SETTINGS.batteryReservePercent}% reserve
+                      </div>
+                    )}
+                  </td>
                   <td className={td}>{c.rangeKm} km</td>
                   <td className={td}>{c.passengerCount}/{c.seats}</td>
                   <td className={td}>{cartWhere(c, campus)}</td>
@@ -287,8 +295,8 @@ export function RidesTables({ data, campus, personas, selected, onSelect }: { da
   const trips = [...data.trips].sort((a, b) => (a.id < b.id ? 1 : -1));
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <Card className="overflow-hidden" role="region" aria-labelledby="req-title">
-        <h2 id="req-title" className="border-b border-line px-4 py-3 text-base font-extrabold">Ride requests <span className="text-xs font-normal text-muted">(request status)</span></h2>
+      <Card id="ops-requests" className="scroll-mt-4 overflow-hidden" role="region" aria-labelledby="req-title">
+        <h2 id="req-title" className="border-b border-line px-4 py-3 text-base font-extrabold">Ride requests <span className="text-[13px] font-normal text-muted">(request status)</span></h2>
         {requests.length === 0 ? <p className="px-4 py-4 text-sm text-muted" data-testid="requests-empty">No ride requests yet.</p> : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[28rem] text-sm">
@@ -296,7 +304,7 @@ export function RidesTables({ data, campus, personas, selected, onSelect }: { da
               <tbody className="divide-y divide-line">
                 {requests.map((r) => (
                   <tr key={r.id} className={selected?.kind === "request" && selected.id === r.id ? "bg-brand-tint" : ""} data-testid="request-row">
-                    <td className={td}><button type="button" className="font-bold hover:underline" onClick={() => onSelect({ kind: "request", id: r.id })}>{r.id}</button><div className="text-[11px] text-muted">{studentText(r.studentId, personas)}</div>{r.mode === "shared" && <div className="text-[11px] font-bold text-brand">Shared</div>}</td>
+                    <td className={`${td} border-l-4 ${selected?.kind === "request" && selected.id === r.id ? "border-brand" : "border-transparent"}`}><button type="button" aria-pressed={selected?.kind === "request" && selected.id === r.id} className="inline-flex min-h-11 items-center font-bold hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" onClick={() => onSelect({ kind: "request", id: r.id })}>{r.id}</button><div className="text-[13px] text-muted">{studentText(r.studentId, personas)}</div>{r.mode === "shared" && <div className="text-[13px] font-bold text-brand">Shared</div>}</td>
                     <td className={td}>{REQUEST_STATUS_TEXT[r.status]}</td>
                     <td className={td}>{locationName(campus, r.pickupId)} → {locationName(campus, r.destinationId)}</td>
                   </tr>
@@ -306,8 +314,8 @@ export function RidesTables({ data, campus, personas, selected, onSelect }: { da
           </div>
         )}
       </Card>
-      <Card className="overflow-hidden" role="region" aria-labelledby="trip-title">
-        <h2 id="trip-title" className="border-b border-line px-4 py-3 text-base font-extrabold">Trips <span className="text-xs font-normal text-muted">(trip status)</span></h2>
+      <Card id="ops-trips" className="scroll-mt-4 overflow-hidden" role="region" aria-labelledby="trip-title">
+        <h2 id="trip-title" className="border-b border-line px-4 py-3 text-base font-extrabold">Trips <span className="text-[13px] font-normal text-muted">(trip status)</span></h2>
         {trips.length === 0 ? <p className="px-4 py-4 text-sm text-muted" data-testid="trips-empty">No trips yet. A trip is created when a request is dispatched.</p> : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[24rem] text-sm">
@@ -315,14 +323,14 @@ export function RidesTables({ data, campus, personas, selected, onSelect }: { da
               <tbody className="divide-y divide-line">
                 {trips.map((t) => (
                   <tr key={t.id} className={selected?.kind === "trip" && selected.id === t.id ? "bg-brand-tint" : ""} data-testid="trip-row">
-                    <td className={td}><button type="button" className="font-bold hover:underline" onClick={() => onSelect({ kind: "trip", id: t.id })}>{t.id}</button>{isSharedTrip(data, t) && <div className="text-[11px] font-bold text-brand" data-testid="trip-shared">Shared</div>}</td>
+                    <td className={`${td} border-l-4 ${selected?.kind === "trip" && selected.id === t.id ? "border-brand" : "border-transparent"}`}><button type="button" aria-pressed={selected?.kind === "trip" && selected.id === t.id} className="inline-flex min-h-11 items-center font-bold hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" onClick={() => onSelect({ kind: "trip", id: t.id })}>{t.id}</button>{isSharedTrip(data, t) && <div className="text-[13px] font-bold text-brand" data-testid="trip-shared">Shared</div>}</td>
                     <td className={td}>{TRIP_STATUS_TEXT[t.status]}</td>
                     <td className={td}>{t.cartId}</td>
                     <td className={td}>
                       {t.passengers.map((p) => p.requestId).join(", ")}
                       {isSharedTrip(data, t) && (() => {
                         const n = tripRiderCounts(t);
-                        return <div className="text-[11px] text-muted" data-testid="trip-riders">{n.committed} committed · {n.onBoard} on board</div>;
+                        return <div className="text-[13px] text-muted" data-testid="trip-riders">{n.committed} committed · {n.onBoard} on board</div>;
                       })()}
                     </td>
                   </tr>
@@ -339,6 +347,17 @@ export function RidesTables({ data, campus, personas, selected, onSelect }: { da
 // ---------- Details ----------
 
 export function DetailsPanel({ data, campus, personas, selected, onClear }: { data: StateSnapshot; campus: CampusConfig; personas: Persona[]; selected: Selected; onClear: () => void }) {
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    const title = titleRef.current;
+    const card = title?.closest<HTMLElement>('[data-testid="details"]');
+    if (!selected || !title || !card) return;
+    const r = card.getBoundingClientRect();
+    if (r.top < 0 || r.top > window.innerHeight - 80) {
+      card.scrollIntoView({ block: "start" });
+      title.focus({ preventScroll: true });
+    }
+  }, [selected?.kind, selected?.id]);
   if (!selected) {
     return <Card className="px-4 py-4 text-sm text-muted" data-testid="details-empty">Select a cart, request or trip to see its details.</Card>;
   }
@@ -349,7 +368,7 @@ export function DetailsPanel({ data, campus, personas, selected, onClear }: { da
     if (c) {
       const open = data.trips.find((t) => t.cartId === c.id && (t.status === "planned" || t.status === "active" || t.status === "cancelling"));
       title = `${c.label} (${c.id})`;
-      rows.push(["Cart status", CART_STATUS_TEXT[c.status]], ["Driver", driverText(c, personas)], ["Battery", `${Math.round(c.batteryPercent)}%`], ["Range", `${c.rangeKm} km`],
+      rows.push(["Cart status", CART_STATUS_TEXT[c.status]], ["Driver", driverText(c, personas)], ["Battery", `${Math.round(c.batteryPercent)}%${c.batteryPercent < SETTINGS.batteryReservePercent ? ` (below the ${SETTINGS.batteryReservePercent}% reserve: the engine assigns no new trips to this cart)` : ""}`], ["Range", `${c.rangeKm} km`],
         ["On board", `${c.passengerCount} of ${c.seats} seats`], ["Top speed", `${c.maxSpeedKmh} km/h`], ["Location", cartWhere(c, campus)], ["Open trip", open ? `${open.id} (${TRIP_STATUS_TEXT[open.status]})` : "None"], ["Simulated", c.simulated ? "Yes" : "No"]);
       if (open && isSharedTrip(data, open)) rows.push(["Committed riders", `${tripRiderCounts(open).committed} of ${c.seats} seats (shared trip ${open.id}; on board counts only riders who boarded)`]);
     }
@@ -393,8 +412,8 @@ export function DetailsPanel({ data, campus, personas, selected, onClear }: { da
   return (
     <Card className="flex flex-col gap-2 p-4" role="region" aria-labelledby="details-title" data-testid="details">
       <div className="flex items-start justify-between gap-2">
-        <h2 id="details-title" className="text-base font-extrabold">{title}</h2>
-        <button type="button" onClick={onClear} className="rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-line">Close</button>
+        <h2 id="details-title" ref={titleRef} tabIndex={-1} className="text-base font-extrabold">{title}</h2>
+        <button type="button" onClick={onClear} className="min-h-11 rounded-full px-4 py-1 text-[13px] font-semibold ring-1 ring-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">Close</button>
       </div>
       {rows.length === 0 ? <p className="text-sm text-muted">{selected.id} is no longer in the live state.</p> : (
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
@@ -403,6 +422,40 @@ export function DetailsPanel({ data, campus, personas, selected, onClear }: { da
           ))}
         </dl>
       )}
+      {selected.kind === "trip" && <TripPassengers data={data} campus={campus} personas={personas} tripId={selected.id} />}
     </Card>
+  );
+}
+
+/**
+ * O-12: one row per rider on the selected trip, from the trip's own passenger flags and the riders' requests.
+ * Tap-In (arrival check-in, never verified) and the rider's boarding state are separate columns: a Tap-In
+ * never means boarded. Read-only; nothing here is computed beyond what the live state already holds.
+ */
+function TripPassengers({ data, campus, personas, tripId }: { data: StateSnapshot; campus: CampusConfig; personas: Persona[]; tripId: string }) {
+  const t = data.trips.find((x) => x.id === tripId);
+  if (!t || t.passengers.length === 0) return null;
+  return (
+    <div className="mt-1 overflow-x-auto" data-testid="trip-passengers">
+      <h3 className="mb-1 text-[13px] font-bold text-muted">Passengers on this trip</h3>
+      <table className="w-full min-w-[30rem] text-left text-[13px]">
+        <thead className="text-muted"><tr><th className="py-1 pr-2 font-semibold">Rider</th><th className="pr-2 font-semibold">Pickup → drop-off</th><th className="pr-2 font-semibold">Rider state</th><th className="font-semibold">Tap-In (check-in only)</th></tr></thead>
+        <tbody>
+          {t.passengers.map((p) => {
+            const r = data.requests.find((x) => x.id === p.requestId);
+            const state = RIDER_STATE_TEXT[p.cancelled ? "cancelled" : p.droppedOff ? "dropped_off" : p.boarded ? "on_board" : "waiting"];
+            const tap = r ? opsTapInText(r, p, (id) => locationName(campus, id)) : null;
+            return (
+              <tr key={p.requestId} className="border-t border-line align-top" data-testid={`trip-passenger-${p.requestId}`}>
+                <td className="py-1 pr-2"><b>{p.requestId}</b><div className="text-muted">{r ? studentText(r.studentId, personas) : "Not in the live state"}</div></td>
+                <td className="pr-2">{r ? `${locationName(campus, r.pickupId)} → ${locationName(campus, r.destinationId)}` : "Unknown"}</td>
+                <td className="pr-2 font-semibold">{state}</td>
+                <td>{tap ?? "None"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }

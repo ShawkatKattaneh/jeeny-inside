@@ -29,25 +29,25 @@ export function TapPointsPanel({ campus, baseUrl: injected }: { campus: CampusCo
   const points = tapPoints(campus);
 
   return (
-    <Card className="flex flex-col gap-3 p-4" role="region" aria-labelledby="tap-points-title" data-testid="tap-points">
+    <Card id="ops-tap-points" className="scroll-mt-4 flex flex-col gap-3 p-4" role="region" aria-labelledby="tap-points-title" data-testid="tap-points">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 id="tap-points-title" className="text-base font-extrabold">Tap Points · {campus.name}</h2>
-        <span className="text-xs text-muted">{points.length} pickup points (campus id: {campus.id})</span>
+        <span className="text-[13px] text-muted">{points.length} pickup points (campus id: {campus.id})</span>
       </div>
-      <p className="text-xs text-muted">
+      <p className="text-[13px] text-muted">
         Write each URL to an NFC tag (a plain URL record) and print the same URL as a QR code next to it. Phones open it with their own NFC reader or camera.
         A Tap-In records a check-in only: it doesn't verify presence or identity, and it never boards anyone.
       </p>
       {loaded.status === "loading" && <p className="text-sm text-muted">Loading the configured host…</p>}
       {loaded.status === "error" && <p role="alert" className="text-sm text-danger">Couldn't load the configured host: {loaded.message}</p>}
       {loaded.status === "ready" && loaded.data === null && (
-        <p role="status" className="rounded-tile bg-amber-50 px-3 py-2 text-sm text-warning" data-testid="tap-points-no-host">
+        <p role="status" className="rounded-tile bg-amber-50 px-3 py-2 text-sm text-ink" data-testid="tap-points-no-host">
           Tap URLs need a configured host. Restart the server with <code>npm start -- --public-host=&lt;the "On phones" address&gt;</code> (or set PUBLIC_HOST), then reload this page.
         </p>
       )}
       {loaded.status === "ready" && loaded.data !== null && (
         <>
-          <p className="rounded-tile bg-amber-50 px-3 py-2 text-xs text-warning" data-testid="tap-points-host">
+          <p className="rounded-tile bg-amber-50 px-3 py-2 text-[13px] text-ink" data-testid="tap-points-host">
             Host in use: <b>{loaded.data}</b>. If the host changes, every NFC tag must be rewritten and every QR code reprinted.
           </p>
           <ul className="flex flex-col divide-y divide-line" data-testid="tap-points-list">
@@ -56,15 +56,15 @@ export function TapPointsPanel({ campus, baseUrl: injected }: { campus: CampusCo
               return (
                 <li key={l.id} className="flex flex-col gap-1 py-2" data-testid={`tap-point-${l.id}`}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-sm font-semibold">{l.name} <span className="text-xs font-normal text-muted">({l.id})</span></span>
+                    <span className="text-sm font-semibold">{l.name} <span className="text-[13px] font-normal text-muted">({l.id})</span></span>
                     <span className="flex gap-2">
-                      <button type="button" onClick={() => void copy(l.id, url)} className="rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-line" data-testid="tap-point-copy">Copy URL</button>
-                      <button type="button" onClick={() => setQrFor(qrFor === l.id ? null : l.id)} className="rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-line" aria-expanded={qrFor === l.id}>
+                      <button type="button" onClick={() => void copy(l.id, url)} className="min-h-11 rounded-full px-4 py-1 text-[13px] font-semibold ring-1 ring-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" data-testid="tap-point-copy">Copy URL</button>
+                      <button type="button" onClick={() => setQrFor(qrFor === l.id ? null : l.id)} className="min-h-11 rounded-full px-4 py-1 text-[13px] font-semibold ring-1 ring-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" aria-expanded={qrFor === l.id}>
                         {qrFor === l.id ? "Hide QR" : "Show QR"}
                       </button>
                     </span>
                   </div>
-                  <input id={`tap-url-${l.id}`} readOnly value={url} onFocus={(e) => e.currentTarget.select()} aria-label={`Tap-In URL for ${l.name}`} className="w-full rounded-tile bg-surface px-2 py-1 font-mono text-xs" data-testid="tap-point-url" />
+                  <input id={`tap-url-${l.id}`} readOnly value={url} onFocus={(e) => e.currentTarget.select()} aria-label={`Tap-In URL for ${l.name}`} className="w-full rounded-tile bg-surface px-2 py-1 font-mono text-[13px]" data-testid="tap-point-url" />
                   {copied?.id === l.id && <CopyFeedback outcome={copied.outcome} />}
                   {qrFor === l.id && <QrCode text={url} label={`QR code for ${l.name}: ${url}`} />}
                 </li>
@@ -80,9 +80,9 @@ export function TapPointsPanel({ campus, baseUrl: injected }: { campus: CampusCo
 /** Result of a "Copy URL" press: success, or a visible manual-copy fallback (plain-HTTP LAN access). */
 export function CopyFeedback({ outcome }: { outcome: CopyOutcome }) {
   return outcome === "copied" ? (
-    <p role="status" className="text-xs font-semibold text-success" data-testid="tap-copy-ok">Copied to the clipboard.</p>
+    <p role="status" className="text-[13px] font-semibold text-ink" data-testid="tap-copy-ok">Copied to the clipboard.</p>
   ) : (
-    <p role="alert" className="rounded-tile bg-amber-50 px-2 py-1 text-xs text-warning" data-testid="tap-copy-manual">
+    <p role="alert" className="rounded-tile bg-amber-50 px-2 py-1 text-[13px] text-ink" data-testid="tap-copy-manual">
       Couldn't copy automatically (the browser blocks it on this connection, for example plain HTTP). The URL above is selected: copy it with Ctrl+C or Cmd+C, or press and hold it and choose Copy.
     </p>
   );
@@ -102,7 +102,7 @@ export function QrCode({ text, label }: { text: string; label: string }) {
         <rect width={size} height={size} fill="#ffffff" />
         <path d={cells.join("")} fill="#000000" />
       </svg>
-      <figcaption className="font-mono text-[10px] text-muted">{text}</figcaption>
+      <figcaption className="font-mono text-[13px] text-muted">{text}</figcaption>
     </figure>
   );
 }

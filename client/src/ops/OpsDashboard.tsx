@@ -10,6 +10,7 @@ import { cartMapPoint } from "../lib/studentRides";
 import { useApi } from "../lib/useApi";
 import { Badge } from "../ui/Badge";
 import { CampusMap } from "../ui/CampusMap";
+import { MapLegend } from "../ui/MapLegend";
 import { LiveStatus } from "../student/LiveStatus";
 import { DetailsPanel, DispatchPanel, FleetTable, MetricsPanel, RidesTables, SimulationPanel, type Selected } from "./OpsPanels";
 import { simClock } from "./opsFormat";
@@ -53,9 +54,9 @@ export function OpsDashboard({ api: injectedApi, personas: injectedPersonas, tap
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-2xl font-extrabold tracking-tight">Operations Center</h1>
-        <Badge>Demo operator interface</Badge>
+        <Badge emphasis="strong">Demo operator interface</Badge>
       </div>
-      <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
+      <div className="flex flex-wrap items-center gap-3 text-[13px] text-muted">
         {data && <span data-testid="header-clock">Simulation time {simClock(data.clockSeconds)} · revision {data.revision}</span>}
         <LiveStatus status={realtime.status} />
       </div>
@@ -77,7 +78,7 @@ export function OpsDashboard({ api: injectedApi, personas: injectedPersonas, tap
     return (
       <>
         {header}
-        <p role="alert" className="rounded-tile bg-red-50 px-4 py-3 text-sm text-danger">The server is now running a different campus. Reload the page to continue.</p>
+        <p role="alert" className="rounded-tile bg-red-50 px-4 py-3 text-sm text-ink">The server is now running a different campus. Reload the page to continue.</p>
       </>
     );
   }
@@ -93,19 +94,28 @@ export function OpsDashboard({ api: injectedApi, personas: injectedPersonas, tap
     <>
       {header}
       {realtime.status !== "live" && (
-        <p role="status" className="rounded-tile bg-amber-50 px-4 py-2 text-xs text-warning" data-testid="ops-not-live">
+        <p role="status" className="rounded-tile bg-amber-50 px-4 py-2 text-[13px] text-ink" data-testid="ops-not-live">
           {realtime.status === "offline" ? "Offline: showing the last state received. Controls still send to the server; the view updates when the connection is back." : "Syncing with the server…"}
         </p>
       )}
-      <p className="text-[11px] text-muted">Demo operator interface for a fictional campus. No sign-in: anyone on this network can open it (the Ops passcode is not built yet).</p>
+      <p className="text-[13px] text-muted">Demo operator interface for a fictional campus. No sign-in: anyone on this network can open it (the Ops passcode is not built yet).</p>
+      <nav aria-label="Operations sections" className="flex flex-wrap gap-1.5" data-testid="ops-section-nav">
+        {([["ops-overview", "Overview"], ["ops-map", "Map & details"], ["ops-dispatch", "Dispatch"], ["ops-simulation", "Simulation"], ["ops-fleet", "Fleet"], ["ops-requests", "Requests"], ["ops-trips", "Trips"], ["ops-analytics", "Analytics"], ["ops-tap-points", "Tap Points"]] as const).map(([id, label]) => (
+          <a key={id} href={`#${id}`} className="inline-flex min-h-11 items-center rounded-full bg-surface px-3 text-[13px] font-semibold text-ink ring-1 ring-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">{label}</a>
+        ))}
+      </nav>
       <MetricsPanel m={m} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start">
-        <section aria-label="Campus map" className="flex flex-col gap-2">
+        <section id="ops-map" aria-label="Campus map" className="scroll-mt-4 flex flex-col gap-2">
           <CampusMap campus={campus} overlay={{ pickupId: focus.pickupId, destinationId: focus.destinationId, routePathIds: focus.pathIds, carts }} />
-          <p className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
-            {campus.fictional && <Badge>Fictional campus</Badge>}
+          <p className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
+            {campus.fictional && <Badge emphasis="strong">Fictional campus</Badge>}
             <span>Schematic map, not GPS. Carts are drawn at their simulated positions from the live state.</span>
           </p>
+          <div className="flex flex-col gap-1" aria-label="Map legend" role="group" data-testid="ops-map-legend">
+            <MapLegend campus={campus} />
+            <p className="text-[13px] text-muted">Black numbered circle: a cart at its simulated position (number from its label); an extra pink ring marks the selected cart. Rings labelled Pickup and Drop-off: the selected ride's stops.</p>
+          </div>
           <DetailsPanel data={data} campus={campus} personas={personas} selected={selected} onClear={() => setSelected(null)} />
         </section>
         <section aria-label="Controls" className="flex flex-col gap-4">

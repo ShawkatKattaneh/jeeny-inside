@@ -14,7 +14,7 @@ import {
 } from "../lib/tapIn";
 import { useApi } from "../lib/useApi";
 import { formatSimTime, locationName } from "../student/format";
-import { StudentProvider, useStudent } from "../student/studentContext";
+import { StillConnectingNote, StudentProvider, useStudent } from "../student/studentContext";
 import { BrandLockup } from "../ui/Brand";
 import { PrimaryButton } from "../ui/Button";
 import { Card } from "../ui/Card";
@@ -65,13 +65,13 @@ export function TapInPage({ store, api, tapApi, personas }: { store?: RealtimeSt
     <div className="mx-auto flex min-h-full max-w-md flex-col gap-4 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))]">
       <header className="flex items-center gap-3 py-2">
         <BrandLockup size={28} />
-        <span className="ml-auto truncate text-right text-xs text-muted">
+        <span className="ml-auto truncate text-right text-[13px] text-muted">
           {persona?.role === "student" ? <span className="block font-semibold text-ink">{persona.name}</span> : null}
           Tap-In
         </span>
       </header>
       <section className="flex flex-col gap-1" aria-label="Tap point">
-        <div className="text-xs text-muted">Pickup point · {campus.name}</div>
+        <div className="text-[13px] text-muted">Pickup point · {campus.name}</div>
         <h1 className="text-2xl font-extrabold tracking-tight" data-testid="tap-point">
           {point.kind === "ok" || point.kind === "not_supported" ? point.location.name : "Unknown tap point"}
         </h1>
@@ -90,8 +90,8 @@ function PointProblem({ point, campusName }: { point: Exclude<ReturnType<typeof 
         : `${point.location.name} isn't a pickup point, so you can't tap in here. Nothing was recorded.`;
   return (
     <>
-      <p role="alert" className="rounded-tile bg-red-50 px-4 py-3 text-sm text-danger" data-testid="tap-point-problem">{text}</p>
-      <Link to="/student" className="text-sm font-semibold text-brand">Go to the Student app</Link>
+      <p role="alert" className="rounded-tile bg-red-50 px-4 py-3 text-sm text-ink" data-testid="tap-point-problem">{text}</p>
+      <Link to="/student" className="inline-flex min-h-11 items-center self-start text-sm font-semibold text-brand">Go to the Student app</Link>
     </>
   );
 }
@@ -114,7 +114,7 @@ function ChooseStudent({ point, current, injected, onChoose }: { point: Location
             <li key={p.id}>
               <button type="button" onClick={() => onChoose(p)} className="flex w-full items-center gap-3 rounded-tile bg-surface px-4 py-3 text-left">
                 <span className="font-bold">{p.name}</span>
-                <span className="text-xs text-muted">{p.subtitle}</span>
+                <span className="text-[13px] text-muted">{p.subtitle}</span>
               </button>
             </li>
           ))}
@@ -137,7 +137,12 @@ function TapInScreen({ point, tapApi }: { point: Location; tapApi?: TapInApi }) 
   const [chosen, setChosen] = useState<string | null>(null);
 
   if (realtime.data === null) {
-    return <p className="rounded-tile bg-surface px-4 py-6 text-center text-sm text-muted" role="status">Loading your rides…</p>;
+    return (
+      <div className="flex flex-col gap-2">
+        <p className="rounded-tile bg-surface px-4 py-6 text-center text-sm text-muted" role="status">Loading your rides…</p>
+        <StillConnectingNote />
+      </div>
+    );
   }
 
   const candidates = tapCandidates(rides, point.id);
@@ -163,7 +168,7 @@ function TapInScreen({ point, tapApi }: { point: Location; tapApi?: TapInApi }) 
             ? `Your ride ${pending.request.id} doesn't have a cart yet. You can tap in once a cart is assigned.`
             : "You don't have a ride with a cart assigned. Book a ride first, then tap in at its pickup point."}
         </p>
-        <Link to="/student" className="text-sm font-semibold text-brand">Go to the Student app</Link>
+        <Link to="/student" className="inline-flex min-h-11 items-center self-start text-sm font-semibold text-brand">Go to the Student app</Link>
       </Card>
     );
   }
@@ -191,9 +196,9 @@ function TapInScreen({ point, tapApi }: { point: Location; tapApi?: TapInApi }) 
       </Card>
 
       {submit.step === "error" && (
-        <p role="alert" className="rounded-tile bg-red-50 px-4 py-3 text-sm text-danger" data-testid="tap-error">
+        <p role="alert" className="rounded-tile bg-red-50 px-4 py-3 text-sm text-ink" data-testid="tap-error">
           <b>{TAP_IN_ERROR_TEXT[submit.code] ?? "Tap-In wasn't recorded."}</b> {submit.message}
-          <span className="mt-1 block text-xs">Nothing was recorded.</span>
+          <span className="mt-1 block text-[13px]">Nothing was recorded.</span>
         </p>
       )}
 
@@ -202,9 +207,9 @@ function TapInScreen({ point, tapApi }: { point: Location; tapApi?: TapInApi }) 
           <PrimaryButton type="button" onClick={confirm} disabled={!selectedId || submit.step === "sending"} aria-busy={submit.step === "sending"} data-testid="tap-confirm">
             {submit.step === "sending" ? "Sending…" : `Confirm Tap-In at ${point.name}`}
           </PrimaryButton>
-          {!selectedId && <p className="text-center text-xs text-muted" data-testid="tap-choose-first">Choose a ride above first.</p>}
-          {submit.step === "sending" && <p className="text-center text-xs text-muted" role="status">Waiting for the server to confirm…</p>}
-          <p className="text-[11px] text-muted">{TAP_IN_LIMITS}</p>
+          {!selectedId && <p className="text-center text-[13px] text-muted" data-testid="tap-choose-first">Choose a ride above first.</p>}
+          {submit.step === "sending" && <p className="text-center text-[13px] text-muted" role="status">Waiting for the server to confirm…</p>}
+          <p className="text-[13px] text-muted">{TAP_IN_LIMITS}</p>
         </div>
       )}
     </>
@@ -233,8 +238,8 @@ function CandidateRow({ c, pointName, pickable, checked, onPick, campusLocation 
   const content = (
     <span className="flex min-w-0 flex-col">
       <span className="font-semibold">{r.id} · {campusLocation(r.pickupId)} → {campusLocation(r.destinationId)}</span>
-      <span className="text-xs text-muted">Ride status: {PHASE_LABEL[c.ride.phase]}</span>
-      <span className={`text-xs ${c.kind === "other_pickup" ? "text-danger" : "text-ink"}`} data-testid={`tap-note-${r.id}`}>{note}</span>
+      <span className={`text-[13px] ${checked ? "text-ink" : "text-muted"}`}>Ride status: {PHASE_LABEL[c.ride.phase]}</span>
+      <span className={`text-[13px] ${c.kind === "other_pickup" ? "text-danger" : "text-ink"}`} data-testid={`tap-note-${r.id}`}>{note}</span>
     </span>
   );
   return (
@@ -267,14 +272,14 @@ export function TapInResult({ result, point }: { result: TapInResponse; point: L
       : null;
   return (
     <Card className="flex flex-col gap-2 p-4" role="status" data-testid="tap-result" data-already={alreadyRecorded ? "yes" : "no"}>
-      <h2 className="text-base font-bold text-success" data-testid="tap-result-title">
+      <h2 className="text-base font-bold text-ink" data-testid="tap-result-title">
         {alreadyRecorded ? `Already tapped in here at ${formatSimTime(tapIn.atMs)}.` : `Tap-In recorded at ${point.name}.`}
       </h2>
       {arrival?.kind === "current" && <p className="text-sm">Wait here: your driver confirms boarding.</p>}
       {historyNote && <p className="rounded-tile bg-surface px-3 py-2 text-sm" data-testid="tap-history-note">{historyNote}</p>}
-      <p className="text-xs text-muted">Ride {request.id} · recorded at {formatSimTime(tapIn.atMs)} (simulation time)</p>
-      <p className="text-[11px] text-muted">{TAP_IN_LIMITS}</p>
-      <Link to={`/student/rides/${encodeURIComponent(request.id)}`} className="text-sm font-semibold text-brand">See your ride</Link>
+      <p className="text-[13px] text-muted">Ride {request.id} · recorded at {formatSimTime(tapIn.atMs)} (simulation time)</p>
+      <p className="text-[13px] text-muted">{TAP_IN_LIMITS}</p>
+      <Link to={`/student/rides/${encodeURIComponent(request.id)}`} className="inline-flex min-h-11 items-center self-start text-sm font-semibold text-brand">See your ride</Link>
     </Card>
   );
 }

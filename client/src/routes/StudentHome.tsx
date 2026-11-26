@@ -40,7 +40,7 @@ function StudentArea({ persona, store, api }: { persona: Persona; store?: Realti
 function StudentNav() {
   const { realtime, activeRide } = useStudent();
   const tab = ({ isActive }: { isActive: boolean }) =>
-    `rounded-full px-4 py-2 text-sm font-semibold transition ${isActive ? "bg-ink text-white" : "text-ink ring-1 ring-line"}`;
+    `inline-flex min-h-11 items-center rounded-full px-4 py-2 text-sm font-semibold transition ${isActive ? "bg-ink text-white" : "text-ink ring-1 ring-line"}`;
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <nav aria-label="Student" className="flex gap-2">
@@ -49,7 +49,7 @@ function StudentNav() {
         </NavLink>
         <NavLink to="/student/rides" className={tab}>
           Your rides
-          {activeRide && <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-brand align-middle" aria-label="(active ride)" />}
+          {activeRide && <><span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-brand align-middle" aria-hidden="true" /><span className="sr-only"> (active ride)</span></>}
         </NavLink>
       </nav>
       <LiveStatus status={realtime.status} />

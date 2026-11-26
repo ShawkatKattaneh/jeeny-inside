@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { CampusConfig, Persona, RideRequest } from "../../../shared/schemas";
 import { createBookingController, type BookingController, type BookingState } from "../lib/booking";
 import { useRealtime, useRealtimeStore } from "../lib/realtimeContext";
@@ -70,4 +70,35 @@ export function useStudent(): StudentData {
 
 export function useBookingState(booking: BookingController): BookingState {
   return useSyncExternalStore(booking.subscribe, booking.getState, booking.getState);
+}
+
+/** How long the first live data may take before the Student screens add a "still connecting" note. */
+export const STILL_CONNECTING_MS = 8000;
+
+/**
+ * True while no live ride data has arrived yet and at least STILL_CONNECTING_MS have passed. UI hint only:
+ * it says nothing about being offline and never implies saved data exists; the realtime store is unchanged.
+ */
+export function useStillConnecting(ms = STILL_CONNECTING_MS): boolean {
+  const { realtime } = useStudent();
+  const waiting = realtime.data === null;
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    if (!waiting) {
+      setLate(false);
+      return;
+    }
+    const timer = setTimeout(() => setLate(true), ms);
+    return () => clearTimeout(timer);
+  }, [waiting, ms]);
+  return waiting && late;
+}
+
+/** The note shown under "Loading your rides…" once useStillConnecting() is true. */
+export function StillConnectingNote() {
+  return useStillConnecting() ? (
+    <p className="text-center text-[13px] text-muted" role="status" data-testid="still-connecting">
+      Still connecting to live ride updates. Your rides will appear as soon as this device reaches the demo server.
+    </p>
+  ) : null;
 }

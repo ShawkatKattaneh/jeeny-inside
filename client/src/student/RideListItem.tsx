@@ -15,12 +15,12 @@ export function RideListItem({ ride }: { ride: StudentRide }) {
           <span className="block truncate text-sm font-bold">
             {locationName(campus, r.pickupId)} <span className="text-muted" aria-label="to">→</span> {locationName(campus, r.destinationId)}
           </span>
-          <span className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted">
+          <span className="mt-0.5 flex flex-wrap items-center gap-2 text-[13px] text-muted">
             <PhasePill phase={ride.phase} />
             <span>{r.id}</span>
             {r.mode === "shared" && <span className="font-bold text-brand">Shared</span>}
             <span>{formatSimTime(r.createdAt)}</span>
-            <span>{r.freeLoyaltyRide ? "Free" : formatJod(r.fareJod)} (simulated)</span>
+            <span className="text-[13px]">{r.freeLoyaltyRide ? "Free" : formatJod(r.fareJod)} (simulated)</span>
           </span>
         </span>
         <span className="text-muted"><ChevronIcon /></span>

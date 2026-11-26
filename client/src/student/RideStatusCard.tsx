@@ -10,12 +10,12 @@ import { useStudent } from "./studentContext";
 
 const PHASE_TONE: Record<RidePhase, string> = {
   requested: "bg-surface text-ink",
-  assigned: "bg-brand-tint text-brand",
-  approaching: "bg-brand-tint text-brand",
+  assigned: "bg-brand-tint text-ink",
+  approaching: "bg-brand-tint text-ink",
   at_pickup: "bg-brand text-white",
-  in_progress: "bg-brand-tint text-brand",
-  at_destination: "bg-brand-tint text-brand",
-  completed: "bg-green-50 text-success",
+  in_progress: "bg-brand-tint text-ink",
+  at_destination: "bg-brand-tint text-ink",
+  completed: "bg-green-50 text-ink",
   cancelled: "bg-surface text-muted",
 };
 
@@ -28,7 +28,7 @@ const TRIP_TEXT: Record<NonNullable<StudentRide["trip"]>["status"], string> = {
 };
 
 export function PhasePill({ phase }: { phase: RidePhase }) {
-  return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${PHASE_TONE[phase]}`}>{PHASE_LABEL[phase]}</span>;
+  return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[13px] font-bold ${PHASE_TONE[phase]}`}>{PHASE_LABEL[phase]}</span>;
 }
 
 /** Step tracker. Steps are marked done only up to the phase the server reports. */
@@ -36,11 +36,11 @@ function Tracker({ phase }: { phase: RidePhase }) {
   if (phase === "cancelled") return null;
   const current = trackStepIndex(phase);
   return (
-    <ol className="grid grid-cols-6 gap-1" aria-label="Ride progress">
+    <ol className="grid grid-cols-3 gap-x-1 gap-y-2 sm:grid-cols-6" aria-label="Ride progress">
       {TRACK_STEPS.map((s, i) => (
         <li key={s.phase} className="flex flex-col items-center gap-1 text-center" aria-current={i === current ? "step" : undefined}>
           <span className={`h-1.5 w-full rounded-full ${i <= current ? "bg-brand" : "bg-line"}`} aria-hidden="true" />
-          <span className={`text-[10px] leading-tight ${i === current ? "font-bold text-ink" : "text-muted"}`}>
+          <span className={`text-[13px] leading-tight ${i === current ? "font-bold text-ink" : "text-muted"}`}>
             {s.label}
             <span className="sr-only">{i < current ? " (done)" : i === current ? " (current)" : " (not yet)"}</span>
           </span>
@@ -80,7 +80,7 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
     <Card className="flex flex-col gap-3 p-4" aria-labelledby={`ride-${ride.request.id}`} role="region">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-xs text-muted">
+          <div className="text-[13px] text-muted">
             {ride.active ? "Your ride" : "Ride"} · {ride.request.id}
             {ride.request.mode === "shared" && <> · <span className="font-bold text-brand" data-testid="ride-shared">Shared</span></>}
           </div>
@@ -91,16 +91,16 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
         {ride.cart && (
           <div className="text-right">
             <div className="text-sm font-bold" data-testid="ride-cart">{ride.cart.label}</div>
-            {ride.cart.simulated && <Badge tone="simulated">Simulated</Badge>}
+            {ride.cart.simulated && <Badge tone="simulated" emphasis="strong">Simulated</Badge>}
           </div>
         )}
       </div>
       <p className="text-sm text-ink" role="status" aria-live="polite">
         {phaseDetail(ride, campus)}
-        {!ride.synced && <span className="mt-1 block text-xs text-muted">Confirming with live updates…</span>}
+        {!ride.synced && <span className="mt-1 block text-[13px] text-muted">Confirming with live updates…</span>}
       </p>
       {sharedLines.length > 0 && (
-        <ul className="flex flex-col gap-0.5 rounded-tile bg-brand-tint px-3 py-2 text-xs text-ink" data-testid="shared-info">
+        <ul className="flex flex-col gap-0.5 rounded-tile bg-brand-tint px-3 py-2 text-[13px] text-ink" data-testid="shared-info">
           {sharedLines.map((l) => <li key={l}>{l}</li>)}
         </ul>
       )}
@@ -113,7 +113,7 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
         {ride.request.mode === "shared" && ride.trip && (
           <>
             <dt className="text-muted">Trip</dt>
-            <dd className="break-words" data-testid="shared-trip-status">{TRIP_TEXT[ride.trip.status]} <span className="text-xs text-muted">(the whole cart's trip, not just your ride)</span></dd>
+            <dd className="break-words" data-testid="shared-trip-status">{TRIP_TEXT[ride.trip.status]} <span className="text-[13px] text-muted">(the whole cart's trip, not just your ride)</span></dd>
           </>
         )}
       </dl>
@@ -121,39 +121,39 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
       <TapInLine ride={ride} />
 
       {cancel.step === "error" && (
-        <p role="alert" className="rounded-tile bg-red-50 px-3 py-2 text-sm text-danger">
+        <p role="alert" className="rounded-tile bg-red-50 px-3 py-2 text-sm text-ink">
           Couldn't cancel: {cancel.message}
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2">
         {showDetailsLink && (
-          <Link to={`/student/rides/${encodeURIComponent(ride.request.id)}`} className="rounded-full bg-surface px-4 py-2 text-sm font-semibold text-ink">
+          <Link to={`/student/rides/${encodeURIComponent(ride.request.id)}`} className="inline-flex min-h-11 items-center rounded-full bg-surface px-4 py-2 text-sm font-semibold text-ink">
             Ride details
           </Link>
         )}
         {showTapInEntry(ride) && (
-          <Link to={tapPath(campus.id, ride.request.pickupId)} className="rounded-full bg-brand-tint px-4 py-2 text-sm font-semibold text-brand" data-testid="tap-entry">
+          <Link to={tapPath(campus.id, ride.request.pickupId)} className="inline-flex min-h-11 items-center rounded-full bg-brand-tint px-4 py-2 text-sm font-semibold text-ink" data-testid="tap-entry">
             I'm at my pickup
           </Link>
         )}
         {canCancel(ride) && cancel.step !== "confirm" && cancel.step !== "sending" && (
-          <button type="button" onClick={() => setCancel({ step: "confirm" })} className="rounded-full px-4 py-2 text-sm font-semibold text-danger ring-1 ring-line">
+          <button type="button" onClick={() => setCancel({ step: "confirm" })} className="inline-flex min-h-11 items-center rounded-full px-4 py-2 text-sm font-semibold text-danger ring-1 ring-line">
             Cancel ride
           </button>
         )}
         {(cancel.step === "confirm" || cancel.step === "sending") && (
           <span className="flex flex-wrap items-center gap-2 text-sm">
             <span>Cancel this ride?</span>
-            {cancelNote && <span className="basis-full text-xs text-muted" data-testid="shared-cancel-note">{cancelNote}</span>}
+            {cancelNote && <span className="basis-full text-[13px] text-muted" data-testid="shared-cancel-note">{cancelNote}</span>}
             <button
               type="button"
               onClick={confirmCancel}
               disabled={cancel.step === "sending"}
-              className="rounded-full bg-danger px-4 py-2 font-semibold text-white disabled:opacity-50"
+              className="inline-flex min-h-11 items-center rounded-full bg-danger px-4 py-2 font-semibold text-white disabled:opacity-50"
             >
               {cancel.step === "sending" ? "Cancelling…" : "Yes, cancel"}
             </button>
-            <button type="button" onClick={() => setCancel({ step: "idle" })} disabled={cancel.step === "sending"} className="rounded-full px-4 py-2 font-semibold ring-1 ring-line">
+            <button type="button" onClick={() => setCancel({ step: "idle" })} disabled={cancel.step === "sending"} className="inline-flex min-h-11 items-center rounded-full px-4 py-2 font-semibold ring-1 ring-line">
               Keep ride
             </button>
           </span>
@@ -174,14 +174,14 @@ function TapInLine({ ride }: { ride: StudentRide }) {
   const where = locationName(campus, a.locationId);
   if (a.kind === "current") {
     return (
-      <p className="rounded-tile bg-brand-tint px-3 py-2 text-xs text-ink" data-testid="ride-tapin" data-arrival="current">
+      <p className="rounded-tile bg-brand-tint px-3 py-2 text-[13px] text-ink" data-testid="ride-tapin" data-arrival="current">
         Tapped in at {where} · {formatSimTime(a.atMs)}. Wait here: your driver confirms boarding.
       </p>
     );
   }
   const why = !a.atCurrentPickup ? "not your current pickup" : ride.request.status === "cancelled" ? "this ride is cancelled" : "history only";
   return (
-    <p className="rounded-tile bg-surface px-3 py-2 text-xs text-muted" data-testid="ride-tapin" data-arrival="history">
+    <p className="rounded-tile bg-surface px-3 py-2 text-[13px] text-muted" data-testid="ride-tapin" data-arrival="history">
       Earlier Tap-In at {where} · {formatSimTime(a.atMs)} ({why})
     </p>
   );

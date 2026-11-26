@@ -5,7 +5,7 @@ import { PricingExplainer } from "./FareInfo";
 import { RideListItem } from "./RideListItem";
 import { RideStatusCard } from "./RideStatusCard";
 import { StudentMap } from "./StudentMap";
-import { useStudent } from "./studentContext";
+import { StillConnectingNote, useStudent } from "./studentContext";
 
 /** Student home: the active ride (or the booking form), the campus map, fares and recent rides. */
 export function HomeView() {
@@ -20,11 +20,15 @@ export function HomeView() {
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight">Hi {persona.name}</h1>
           <p className="text-sm text-muted">{campus.name}</p>
+          <a href="#student-map" className="inline-flex min-h-11 items-center text-[13px] font-semibold text-brand md:hidden">View campus map ↓</a>
         </div>
         {loading ? (
-          <p className="rounded-tile bg-surface px-4 py-6 text-center text-sm text-muted" role="status">
-            Loading your rides…
-          </p>
+          <div className="flex flex-col gap-2">
+            <p className="rounded-tile bg-surface px-4 py-6 text-center text-sm text-muted" role="status">
+              Loading your rides…
+            </p>
+            <StillConnectingNote />
+          </div>
         ) : activeRide ? (
           <RideStatusCard ride={activeRide} />
         ) : (
@@ -33,17 +37,17 @@ export function HomeView() {
         <PricingExplainer />
       </section>
 
-      <section className="flex flex-col gap-4 md:order-1" aria-label="Campus map and recent rides">
+      <section id="student-map" className="scroll-mt-4 flex flex-col gap-4 md:order-1" aria-label="Campus map and recent rides">
         <StudentMap ride={activeRide} pickupId={selection.pickupId} destinationId={selection.destinationId} />
         <div>
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-sm font-bold">Recent rides</h2>
-            <Link to="/student/rides" className="text-xs font-semibold text-brand">
+            <Link to="/student/rides" className="inline-flex min-h-11 items-center text-[13px] font-semibold text-brand">
               All rides
             </Link>
           </div>
           {loading ? null : recent.length === 0 ? (
-            <p className="text-xs text-muted">No finished rides yet.</p>
+            <p className="text-[13px] text-muted">No finished rides yet.</p>
           ) : (
             <ul className="flex flex-col gap-2">
               {recent.map((r) => <RideListItem key={r.request.id} ride={r} />)}

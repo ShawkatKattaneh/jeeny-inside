@@ -53,7 +53,7 @@ export function BookingPanel({ selection, onChange }: { selection: Selection; on
       <form onSubmit={submit} noValidate className="flex flex-col gap-3" aria-describedby={messageId}>
         <h2 className="text-lg font-extrabold tracking-tight">Where to?</h2>
         <div>
-          <label htmlFor={pickupFieldId} className="mb-1 flex items-center gap-2 text-xs font-semibold text-muted">
+          <label htmlFor={pickupFieldId} className="mb-1 flex items-center gap-2 text-[13px] font-semibold text-muted">
             <span className="inline-block h-2.5 w-2.5 rounded-full ring-[3px] ring-brand" aria-hidden="true" /> Pickup
           </label>
           <select
@@ -71,7 +71,7 @@ export function BookingPanel({ selection, onChange }: { selection: Selection; on
         <div className="flex justify-center">
           <button
             type="button"
-            className="rounded-full px-3 py-1 text-xs font-semibold text-muted ring-1 ring-line disabled:opacity-40"
+            className="min-h-11 rounded-full px-4 py-1 text-[13px] font-semibold text-muted ring-1 ring-line disabled:opacity-40"
             disabled={submitting || (!selection.pickupId && !selection.destinationId)}
             onClick={() => onChange({ pickupId: selection.destinationId, destinationId: selection.pickupId })}
           >
@@ -79,7 +79,7 @@ export function BookingPanel({ selection, onChange }: { selection: Selection; on
           </button>
         </div>
         <div>
-          <label htmlFor={destFieldId} className="mb-1 flex items-center gap-2 text-xs font-semibold text-muted">
+          <label htmlFor={destFieldId} className="mb-1 flex items-center gap-2 text-[13px] font-semibold text-muted">
             <span className="inline-block h-2.5 w-2.5 rounded-full ring-[3px] ring-dropoff" aria-hidden="true" /> Destination
           </label>
           <select
@@ -96,19 +96,19 @@ export function BookingPanel({ selection, onChange }: { selection: Selection; on
         </div>
 
         <fieldset className="flex flex-col gap-1.5" aria-describedby={modeHelpId}>
-          <legend className="mb-1 text-xs font-semibold text-muted">Ride type</legend>
+          <legend className="mb-1 text-[13px] font-semibold text-muted">Ride type</legend>
           <div className="grid grid-cols-2 gap-2" data-testid="mode-choice">
             {(["solo", "shared"] as const).map((m) => (
               <label
                 key={m}
-                className={`flex h-11 cursor-pointer items-center justify-center gap-2 rounded-tile text-sm font-semibold ring-1 ${mode === m ? "bg-brand-tint text-brand ring-brand" : "bg-surface text-ink ring-line"}`}
+                className={`flex h-11 cursor-pointer items-center justify-center gap-2 rounded-tile text-sm font-semibold ring-1 ${mode === m ? "bg-brand-tint text-ink ring-brand" : "bg-surface text-ink ring-line"}`}
               >
                 <input type="radio" name="ride-mode" value={m} checked={mode === m} disabled={submitting} onChange={() => setMode(m)} className="accent-[var(--color-brand)]" />
                 {m === "solo" ? "Solo" : "Shared"}
               </label>
             ))}
           </div>
-          <p id={modeHelpId} className="text-[11px] text-muted" data-testid="mode-help">
+          <p id={modeHelpId} className="text-[13px] text-muted" data-testid="mode-help">
             {mode === "shared"
               ? "Shared may combine your ride with compatible rides on the same cart. A match is not guaranteed: it depends on the live carts and trips when your ride is dispatched. Same fare."
               : "Solo: a cart for your ride only."}
@@ -119,20 +119,22 @@ export function BookingPanel({ selection, onChange }: { selection: Selection; on
 
         <div id={messageId} className="min-h-5 text-sm">
           {state.status === "error" ? (
-            <p role="alert" className="rounded-tile bg-red-50 px-3 py-2 text-danger" data-testid="booking-error">
+            <p role="alert" className="rounded-tile bg-red-50 px-3 py-2 text-ink" data-testid="booking-error">
               Couldn't request the ride: {state.message}
             </p>
           ) : showCheck ? (
             <p className="text-danger">{check.message}</p>
           ) : blocked ? (
             <p className="text-muted">{blocked}</p>
+          ) : !check.ok ? (
+            <p className="text-muted" data-testid="booking-hint">Choose a pickup and a destination to request a ride.</p>
           ) : null}
         </div>
 
         <PrimaryButton type="submit" disabled={submitting || !check.ok || blocked !== null} aria-busy={submitting}>
           {submitting ? "Requesting…" : "Request a ride"}
         </PrimaryButton>
-        <p className="text-center text-[11px] text-muted">The route and cart are chosen by the server after you request.</p>
+        <p className="text-center text-[13px] text-muted">The route and cart are chosen by the server after you request.</p>
       </form>
     </Card>
   );

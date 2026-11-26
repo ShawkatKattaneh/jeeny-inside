@@ -21,7 +21,7 @@ export function StudentMap({ ride, pickupId, destinationId }: { ride: StudentRid
           cart: ride?.cart && point ? { label: ride.cart.label, point } : null,
         }}
       />
-      <figcaption className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
+      <figcaption className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
         {campus.fictional && <Badge>Fictional campus</Badge>}
         <span>Demo campus map: schematic, not to scale, not GPS.</span>
         {ride?.cart && <span>Cart position is simulated and moves only when the simulation advances.</span>}

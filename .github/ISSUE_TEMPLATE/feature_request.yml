@@ -1,0 +1,46 @@
+name: Feature request
+description: Suggest an improvement or a new capability.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the product?
+      options:
+        - Student app
+        - Driver Mode
+        - Operations Center
+        - Three-phone demo (/demo)
+        - Tap-In (NFC / QR)
+        - Server / API / realtime
+        - Setup, build or deployment
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is hard or missing today, and for whom?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: checkboxes
+    id: impact
+    attributes:
+      label: Impact check
+      description: Tick everything this proposal would change. These need team agreement (see CONTRIBUTING.md).
+      options:
+        - label: A protected business rule (fare, loyalty, Ghost Ride limits, battery reserve, Tap-In, explicit driver steps, dispatch)
+        - label: An API contract or the database schema
+        - label: Shows data that is simulated or estimated (it must stay labelled as such)
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

@@ -1,0 +1,65 @@
+name: Bug report
+description: Something in Jeeny INSIDE does not work as expected.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting. Please do not paste secrets, tokens or personal data.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it happen?
+      options:
+        - Student app
+        - Driver Mode
+        - Operations Center
+        - Three-phone demo (/demo)
+        - Tap-In (NFC / QR)
+        - Server / API / realtime
+        - Setup, build or deployment (local or Replit)
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open /demo
+        2. As the Student, request a ride from ... to ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Include any error message shown on screen or in the browser console or server log.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Browser, device and screen width
+      placeholder: Chrome 131 on Android, 390 px; or Safari on macOS, 1440 px
+  - type: dropdown
+    id: theme
+    attributes:
+      label: Theme
+      options: [Light, Dark, System, Not relevant]
+  - type: input
+    id: version
+    attributes:
+      label: Branch or commit
+      placeholder: main, develop, or a commit hash
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or recordings

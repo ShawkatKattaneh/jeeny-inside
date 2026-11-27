@@ -3,7 +3,7 @@ import { buildApp } from "./app.js";
 import { loadCampus } from "./campus.js";
 import { defaultDatabaseFile } from "./database.js";
 import { defaultFleetFile, loadFleet } from "./fleet.js";
-import { lanAddresses, parsePublicHost, tapBaseUrlFor } from "./network.js";
+import { lanAddresses, parsePublicHost, parsePublicUrl, tapBaseUrlFor } from "./network.js";
 import { openAppStore } from "./state.js";
 
 // Plain CLI flags instead of env-var prefixes so the same commands work on Windows, macOS and Linux.
@@ -25,6 +25,14 @@ if (!publicHost.ok) {
   process.exit(1);
 }
 
+// Hosted deployments (Replit): the public https address, with no port. Takes precedence over the host above.
+const publicUrlArg = args.find((a) => a.startsWith("--public-url="))?.slice("--public-url=".length);
+const publicUrl = parsePublicUrl(publicUrlArg ?? process.env.PUBLIC_URL);
+if (!publicUrl.ok) {
+  console.error(`\n  Invalid public URL for Tap-In links: ${publicUrl.message}.\n  Use --public-url=<https://your-app-address> or PUBLIC_URL=<https://your-app-address>.\n`);
+  process.exit(1);
+}
+
 const campus = loadCampus(campusArg);
 
 // Phase 5: the ride state is saved in SQLite. Startup order: open the file, apply its settings, upgrade
@@ -42,7 +50,7 @@ try {
 const { store } = opened;
 
 const webPort = isProd ? PORT : Number(process.env.CLIENT_PORT ?? 5173);
-const tapBaseUrl = tapBaseUrlFor(publicHost.host, webPort);
+const tapBaseUrl = publicUrl.url ?? tapBaseUrlFor(publicHost.host, webPort);
 // The one app, and so the one authoritative ride state, for this server process.
 const app = await buildApp({ store, clientDir: isProd ? "dist" : undefined, logger: false, tapBaseUrl });
 await app.listen({ port: PORT, host: HOST });
@@ -78,4 +86,4 @@ if (isProd) {
 }
 console.log(tapBaseUrl
   ? `  Tap-In links:    ${tapBaseUrl}/tap/${campus.id}/<point> (changing this host means rewriting NFC tags and reprinting QR codes)\n`
-  : "  Tap-In links:    no public host set. Start with --public-host=<On phones address> to show tap URLs in Operations.\n");
+  : "  Tap-In links:    no public address set. Use --public-host=<On phones address>, or PUBLIC_URL=<https address> when hosted, to show tap URLs in Operations.\n");

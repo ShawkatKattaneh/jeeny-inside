@@ -30,6 +30,33 @@ npm run check      # type check + tests + production build
 
 Both `dev` and `start` print the addresses phones can open, for example `http://192.168.43.12:5173`.
 
+### Run on Replit
+
+The repository is ready to import: `.replit` holds the run, build and port settings, so no code changes are needed on Replit. One Node.js process serves the React app, the REST API and Socket.IO on one port, with SQLite in a file.
+
+**When you receive the account:**
+
+1. On Replit choose **Create App → Import from GitHub**, pick `ShawkatKattaneh/jeeny-inside` and the branch you want to present (for example `claude/project-thread-dtlobs`). Replit reads `.replit` and uses the Node.js 22 module.
+2. Press **Run**. It runs `npm run replit:build` (install and production build), then `npm run replit:start` (Node version check, then the server on `$PORT`, default 3000, at `0.0.0.0`). The Preview opens the app; add `/demo` to the address for the three-phone presentation view.
+3. Click **Publish** and choose **Reserved VM** as the deployment type (not Autoscale), with the smallest machine. The build and run commands come from `.replit` (`npm run replit:build`, `npm run replit:start`; port 3000 to 80). Publish.
+4. Open `https://<your-app>.replit.app/demo`. Every page, including `/demo`, `/student`, `/driver`, `/ops` and Tap-In links, works with direct navigation and refresh.
+5. Optional, for NFC/QR Tap-In links: in the deployment's settings add the environment variable or Secret `PUBLIC_URL` = your published address (for example `https://<your-app>.replit.app`, no path), then publish again. Operations → Tap Points then shows the URLs and QR codes.
+
+**Settings (all optional):**
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PORT` | 3000 | Port the server listens on (Replit's port 3000 is mapped to the public port 80 in `.replit`). |
+| `DB_FILE` | `data/<campus id>.sqlite` | The SQLite file. Created and seeded from the fleet file on first start; restored on every later start. |
+| `PUBLIC_URL` | none | Public https address used in Tap-In NFC/QR links. Without it, Tap Points shows no URLs. |
+| `CAMPUS_FILE`, `FLEET_FILE` | the fictional campus and its fleet | Swap the campus, as on a laptop. |
+
+No secrets or API keys are required.
+
+**Why Reserved VM:** the live ride state and every Socket.IO connection live in one server process. Autoscale can run several instances (each with its own state) and scales to zero when idle, which would break live updates and reset rides.
+
+**Persistent storage (read before the demo):** Replit's published apps do not keep their file system: it "resets every time you publish". So on the published app the SQLite file starts fresh (seeded from the fleet file) after each publish, and should be treated as temporary across restarts of the deployment. Rides and history are kept while that deployment is running. In the Replit workspace (the Run button) the `data/` folder is kept between runs. For a clean demo, simply publish again; nothing else needs configuring. Keeping ride history permanently across publishes would need an external database (for example Replit's PostgreSQL), which this version does not use and would be a separate change.
+
 ### Phones over the laptop's hotspot
 
 1. Turn on the laptop's hotspot (or put the laptop and phones on the same Wi-Fi).
@@ -200,6 +227,8 @@ The phone's own NFC reader or camera opens it in the browser, on the `/tap` conf
 npm start -- --public-host=<the "On phones" address>     # for example the hotspot address, without http:// or a port
 PUBLIC_HOST=<address> npm start                            # the same, as an environment variable
 ```
+
+When the app is hosted at an https address (for example on Replit), set the whole address instead: `PUBLIC_URL=https://<your-app-address>` (or `--public-url=`). It takes precedence over the public host and gives links without a port.
 
 The value must be a bare hostname or IPv4 address; the server refuses to start on anything else. Operations → **Tap Points** lists every pickup point (every location where carts can stop) with its URL, a Copy button and a QR code. Without a public host it shows no URLs.
 

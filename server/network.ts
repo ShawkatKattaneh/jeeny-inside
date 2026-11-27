@@ -31,3 +31,24 @@ export function parsePublicHost(value: string | undefined): { ok: true; host: st
 export function tapBaseUrlFor(host: string | null, port: number): string | null {
   return host === null ? null : `http://${host}:${port}`;
 }
+
+/**
+ * Hosted deployments (for example Replit): the full public base URL that NFC tags and QR codes will contain,
+ * such as https://jeeny-inside.example.replit.app. http or https, a hostname, an optional port, no path or
+ * query. A trailing slash is ignored. Takes precedence over the public host; nothing here guesses a value.
+ */
+export function parsePublicUrl(value: string | undefined): { ok: true; url: string | null } | { ok: false; message: string } {
+  if (value === undefined || value.trim() === "") return { ok: true, url: null };
+  const raw = value.trim().replace(/\/+$/, "");
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return { ok: false, message: `"${value.trim()}" is not a URL (expected for example https://my-app.example.com)` };
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return { ok: false, message: `"${raw}" must start with http:// or https://` };
+  if (u.pathname !== "/" || u.search || u.hash || u.username || u.password) return { ok: false, message: `"${raw}" must be only a scheme, host and optional port (no path, query or credentials)` };
+  const host = parsePublicHost(u.hostname);
+  if (!host.ok) return { ok: false, message: host.message };
+  return { ok: true, url: `${u.protocol}//${u.host}` };
+}

@@ -1,0 +1,26 @@
+# Jeeny INSIDE on Replit: one Node.js process serves the built React app, the REST API and Socket.IO
+# on the same port, with the ride state saved in SQLite. See "Run on Replit" in README.md.
+modules = ["nodejs-22"]
+
+# The Run button in the Replit workspace: install, build, then start the production server.
+run = "npm run replit:build && npm run replit:start"
+
+[env]
+# The server listens on $PORT (default 3000) and on 0.0.0.0. Set PUBLIC_URL (https address of the
+# published app) in Secrets to show Tap-In NFC/QR links. DB_FILE chooses the SQLite file.
+PORT = "3000"
+DB_FILE = "data/wadi-cedar.sqlite"
+
+[[ports]]
+localPort = 3000
+externalPort = 80
+
+[deployment]
+# Reserved VM: one always-on instance. Required: the live ride state and every Socket.IO connection
+# live in that single server process (Autoscale would split them across instances and scale to zero).
+deploymentTarget = "gce"
+build = ["sh", "-c", "npm run replit:build"]
+run = ["sh", "-c", "npm run replit:start"]
+
+[gitHubImport]
+requiredFiles = [".replit", "package.json", "package-lock.json"]

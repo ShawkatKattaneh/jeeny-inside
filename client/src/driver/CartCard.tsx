@@ -15,33 +15,33 @@ export function CartCard({ cart, campus }: { cart: Cart; campus: CampusConfig })
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[13px] text-muted">Your cart</div>
-          <h2 id="cart-title" className="text-xl font-extrabold tracking-tight" data-testid="driver-cart">{cart.label}</h2>
+          <h2 id="cart-title" className="text-[22px] font-extrabold tracking-tight" data-testid="driver-cart">{cart.label}</h2>
           <div className="text-[13px] text-muted">{cart.id}</div>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <span className="rounded-full bg-surface px-3 py-1 text-[13px] font-bold text-ink" data-testid="cart-status">{CART_STATUS_LABEL[cart.status]}</span>
+          <span className="sr-only">Cart status: </span><span className="rounded-full bg-surface px-3 py-1 text-[13px] font-bold text-ink ring-1 ring-line" data-testid="cart-status">{CART_STATUS_LABEL[cart.status]}</span>
           {cart.simulated && <Badge tone="simulated" emphasis="strong">Simulated</Badge>}
         </div>
       </div>
       <dl className="grid grid-cols-3 gap-2 text-center">
-        <div className="rounded-tile bg-surface px-2 py-2">
+        <div className="rounded-tile bg-surface px-2 py-2.5">
           <dt className="text-[13px] text-muted">Battery</dt>
-          <dd className="text-base font-extrabold" data-testid="cart-battery">{Math.round(cart.batteryPercent)}%</dd>
+          <dd className="text-[19px] font-extrabold" data-testid="cart-battery">{Math.round(cart.batteryPercent)}%</dd>
           <div className="mx-auto mt-1 h-1.5 w-full max-w-16 overflow-hidden rounded-full bg-line" aria-hidden="true">
             <div className={`h-full ${low ? "bg-warning" : "bg-success"}`} style={{ width: `${Math.max(0, Math.min(100, cart.batteryPercent))}%` }} />
           </div>
         </div>
-        <div className="rounded-tile bg-surface px-2 py-2">
+        <div className="rounded-tile bg-surface px-2 py-2.5">
           <dt className="text-[13px] text-muted">Range</dt>
-          <dd className="text-base font-extrabold">{cart.rangeKm} km</dd>
+          <dd className="text-[19px] font-extrabold">{cart.rangeKm} km</dd>
         </div>
-        <div className="rounded-tile bg-surface px-2 py-2">
+        <div className="rounded-tile bg-surface px-2 py-2.5">
           <dt className="text-[13px] text-muted">On board</dt>
-          <dd className="text-base font-extrabold" data-testid="cart-passengers">{cart.passengerCount}/{cart.seats}</dd>
+          <dd className="text-[19px] font-extrabold" data-testid="cart-passengers">{cart.passengerCount}/{cart.seats}</dd>
         </div>
       </dl>
       {low && (
-        <p className="rounded-tile bg-amber-50 px-3 py-2 text-sm text-ink" data-testid="cart-battery-low">
+        <p className="rounded-tile bg-warning-tint px-3 py-2 text-sm text-ink" data-testid="cart-battery-low">
           Battery below the {SETTINGS.batteryReservePercent}% reserve: no new trips are assigned to this cart.
         </p>
       )}

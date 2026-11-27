@@ -20,18 +20,28 @@ export function TapPointsPanel({ campus, baseUrl: injected }: { campus: CampusCo
     const outcome = await copyText(url);
     setCopied({ id, outcome });
     // Manual fallback: select the URL so the person can copy it with the system menu or Ctrl/Cmd+C.
+    // The visible URL wraps, so the whole address is selected and shown, on phones too.
     if (outcome === "manual") {
-      const field = document.getElementById(`tap-url-${id}`) as HTMLInputElement | null;
-      field?.focus();
-      field?.select();
+      const shown = document.getElementById(`tap-url-text-${id}`);
+      const selection = window.getSelection();
+      if (shown && selection) {
+        const range = document.createRange();
+        range.selectNodeContents(shown);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      } else {
+        const field = document.getElementById(`tap-url-${id}`) as HTMLInputElement | null;
+        field?.focus();
+        field?.select();
+      }
     }
   }
   const points = tapPoints(campus);
 
   return (
-    <Card id="ops-tap-points" className="scroll-mt-4 flex flex-col gap-3 p-4" role="region" aria-labelledby="tap-points-title" data-testid="tap-points">
+    <Card id="ops-tap-points" className="scroll-mt-24 flex flex-col gap-3 p-4" role="region" aria-labelledby="tap-points-title" data-testid="tap-points">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="tap-points-title" className="text-base font-extrabold">Tap Points · {campus.name}</h2>
+        <h2 id="tap-points-title" className="text-[17px] font-extrabold">Tap Points · {campus.name}</h2>
         <span className="text-[13px] text-muted">{points.length} pickup points (campus id: {campus.id})</span>
       </div>
       <p className="text-[13px] text-muted">
@@ -39,15 +49,15 @@ export function TapPointsPanel({ campus, baseUrl: injected }: { campus: CampusCo
         A Tap-In records a check-in only: it doesn't verify presence or identity, and it never boards anyone.
       </p>
       {loaded.status === "loading" && <p className="text-sm text-muted">Loading the configured host…</p>}
-      {loaded.status === "error" && <p role="alert" className="text-sm text-danger">Couldn't load the configured host: {loaded.message}</p>}
+      {loaded.status === "error" && <p role="alert" className="text-sm text-danger-text">Couldn't load the configured host: {loaded.message}</p>}
       {loaded.status === "ready" && loaded.data === null && (
-        <p role="status" className="rounded-tile bg-amber-50 px-3 py-2 text-sm text-ink" data-testid="tap-points-no-host">
+        <p role="status" className="rounded-tile bg-warning-tint px-3 py-2 text-sm text-ink" data-testid="tap-points-no-host">
           Tap URLs need a configured host. Restart the server with <code>npm start -- --public-host=&lt;the "On phones" address&gt;</code> (or set PUBLIC_HOST), then reload this page.
         </p>
       )}
       {loaded.status === "ready" && loaded.data !== null && (
         <>
-          <p className="rounded-tile bg-amber-50 px-3 py-2 text-[13px] text-ink" data-testid="tap-points-host">
+          <p className="rounded-tile bg-warning-tint px-3 py-2 text-[13px] text-ink" data-testid="tap-points-host">
             Host in use: <b>{loaded.data}</b>. If the host changes, every NFC tag must be rewritten and every QR code reprinted.
           </p>
           <ul className="flex flex-col divide-y divide-line" data-testid="tap-points-list">
@@ -64,7 +74,10 @@ export function TapPointsPanel({ campus, baseUrl: injected }: { campus: CampusCo
                       </button>
                     </span>
                   </div>
-                  <input id={`tap-url-${l.id}`} readOnly value={url} onFocus={(e) => e.currentTarget.select()} aria-label={`Tap-In URL for ${l.name}`} className="w-full rounded-tile bg-surface px-2 py-1 font-mono text-[13px]" data-testid="tap-point-url" />
+                  {/* The full URL, wrapping at any character so it is never cut off; one tap selects all of it. */}
+                  <p id={`tap-url-text-${l.id}`} className="select-all break-all rounded-tile bg-surface px-2 py-1.5 font-mono text-[13px] leading-snug text-ink" aria-hidden="true">{url}</p>
+                  {/* The same URL as a read-only field for screen readers and keyboard selection. */}
+                  <input id={`tap-url-${l.id}`} readOnly value={url} onFocus={(e) => e.currentTarget.select()} aria-label={`Tap-In URL for ${l.name}`} className="sr-only" tabIndex={-1} data-testid="tap-point-url" />
                   {copied?.id === l.id && <CopyFeedback outcome={copied.outcome} />}
                   {qrFor === l.id && <QrCode text={url} label={`QR code for ${l.name}: ${url}`} />}
                 </li>
@@ -82,7 +95,7 @@ export function CopyFeedback({ outcome }: { outcome: CopyOutcome }) {
   return outcome === "copied" ? (
     <p role="status" className="text-[13px] font-semibold text-ink" data-testid="tap-copy-ok">Copied to the clipboard.</p>
   ) : (
-    <p role="alert" className="rounded-tile bg-amber-50 px-2 py-1 text-[13px] text-ink" data-testid="tap-copy-manual">
+    <p role="alert" className="rounded-tile bg-warning-tint px-2 py-1 text-[13px] text-ink" data-testid="tap-copy-manual">
       Couldn't copy automatically (the browser blocks it on this connection, for example plain HTTP). The URL above is selected: copy it with Ctrl+C or Cmd+C, or press and hold it and choose Copy.
     </p>
   );
@@ -102,7 +115,7 @@ export function QrCode({ text, label }: { text: string; label: string }) {
         <rect width={size} height={size} fill="#ffffff" />
         <path d={cells.join("")} fill="#000000" />
       </svg>
-      <figcaption className="font-mono text-[13px] text-muted">{text}</figcaption>
+      <figcaption className="break-all font-mono text-[13px] text-muted">{text}</figcaption>
     </figure>
   );
 }

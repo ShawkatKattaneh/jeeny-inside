@@ -1,39 +1,16 @@
 import { useSyncExternalStore } from "react";
 import type { CampusConfig, Persona, StateSnapshot } from "../../../shared/schemas";
 import type { DriverActionController } from "../lib/driverActions";
-import { ACTION_LABEL, STAGE_LABEL, type CartTrip, type DriverStage } from "../lib/driverWork";
+import { ACTION_LABEL, STAGE_LABEL, type CartTrip } from "../lib/driverWork";
 import { PrimaryButton } from "../ui/Button";
+import { useFlashOnChange } from "../ui/useFlashOnChange";
+import { useCurrentStageSuccess } from "./useCurrentStageSuccess";
 import { Card } from "../ui/Card";
 import { formatJod, formatSimTime, locationName } from "../student/format";
 import { SharedTripCard } from "./SharedTripCard";
 import { arrivalState, passengerOf } from "../lib/tapIn";
 import { TapInBadge } from "./TapInBadge";
-
-const STEPS: { stage: DriverStage; label: string }[] = [
-  { stage: "planned", label: "Assigned" },
-  { stage: "to_pickup", label: "To pickup" },
-  { stage: "at_pickup", label: "At pickup" },
-  { stage: "to_destination", label: "On board" },
-  { stage: "at_destination", label: "At drop-off" },
-];
-
-function Steps({ stage }: { stage: DriverStage }) {
-  const current = STEPS.findIndex((s) => s.stage === stage);
-  if (current === -1) return null;
-  return (
-    <ol className="grid grid-cols-5 gap-1" aria-label="Trip progress">
-      {STEPS.map((s, i) => (
-        <li key={s.stage} className="flex flex-col items-center gap-1 text-center" aria-current={i === current ? "step" : undefined}>
-          <span className={`h-1.5 w-full rounded-full ${i <= current ? "bg-brand" : "bg-line"}`} aria-hidden="true" />
-          <span className={`text-[13px] leading-tight ${i === current ? "font-bold text-ink" : "text-muted"}`}>
-            {s.label}
-            <span className="sr-only">{i < current ? " (done)" : i === current ? " (current)" : " (not yet)"}</span>
-          </span>
-        </li>
-      ))}
-    </ol>
-  );
-}
+import { ActionBar, HeroPanel, HeroSteps, StatusChips } from "./DriverChrome";
 
 /**
  * The selected trip of the driver's cart: passenger, pickup, destination, the three separate statuses,
@@ -66,72 +43,84 @@ function SoloTripCard({ view, campus, personas, data, actions }: {
   const passenger = request ? personas.find((p) => p.id === request.studentId && p.role === "student") ?? null : null;
   const pending = state.status === "pending";
   const forThisTrip = state.status !== "idle" && state.binding.tripId === trip.id;
+  const successNow = useCurrentStageSuccess(state, stage);
+  const flash = useFlashOnChange(stage);
+
+  // Where the cart is heading now, from the server's stage (no new data).
+  const toward = !request ? null
+    : stage === "planned" || stage === "to_pickup" || stage === "at_pickup" ? { label: "Pickup", where: locationName(campus, request.pickupId) }
+    : stage === "to_destination" || stage === "at_destination" ? { label: "Drop-off", where: locationName(campus, request.destinationId) }
+    : null;
 
   return (
-    <Card className="flex flex-col gap-3 p-4" role="region" aria-labelledby={`trip-${trip.id}`}>
-      <div className="flex items-start justify-between gap-3">
+    <section className="flex flex-col gap-3" role="region" aria-labelledby={`trip-${trip.id}`}>
+      <HeroPanel>
         <div>
-          <div className="text-[13px] text-muted">Trip assigned to your cart · {trip.id}</div>
-          <h2 id={`trip-${trip.id}`} className="text-lg font-extrabold tracking-tight" data-testid="trip-stage">{STAGE_LABEL[stage]}</h2>
+          <div className="text-[13px] text-hero-muted">Trip assigned to your cart · {trip.id}</div>
+          <h2 id={`trip-${trip.id}`} className={`-mx-1 mt-0.5 rounded-md px-1 text-[28px] font-extrabold leading-tight tracking-tight ${flash}`} data-testid="trip-stage">{STAGE_LABEL[stage]}</h2>
+          {toward && (
+            <p className="mt-1 text-[15px] text-hero-muted">
+              {toward.label}: <b className="font-bold text-hero-fg">{toward.where}</b>
+            </p>
+          )}
         </div>
-      </div>
+        <HeroSteps stage={stage} />
+      </HeroPanel>
 
-      <Steps stage={stage} />
+      <Card className="p-4">
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2.5 text-[15px]">
+          <dt className="text-muted">Passenger</dt>
+          <dd className="font-bold" data-testid="trip-passenger">
+            {request ? (passenger ? `${passenger.name} (${request.studentId})` : request.studentId) : "Not in the live state"}
+          </dd>
+          <dt className="text-muted">Pickup</dt>
+          <dd className="font-semibold">
+            {request ? locationName(campus, request.pickupId) : "Unknown"}
+            {request && <TapInBadge arrival={arrivalState(request, passengerOf(trip, request.id))} />}
+          </dd>
+          <dt className="text-muted">Drop-off</dt>
+          <dd className="font-semibold">{request ? locationName(campus, request.destinationId) : "Unknown"}</dd>
+          {request && (
+            <>
+              <dt className="text-muted">Fare</dt>
+              <dd>{formatJod(request.fareJod)} <span className="text-[13px] text-muted">(simulated, no payment)</span></dd>
+              <dt className="text-muted">Requested</dt>
+              <dd>{request.id} · {formatSimTime(request.createdAt)}</dd>
+            </>
+          )}
+        </dl>
+      </Card>
 
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
-        <dt className="text-muted">Passenger</dt>
-        <dd className="font-semibold" data-testid="trip-passenger">
-          {request ? (passenger ? `${passenger.name} (${request.studentId})` : request.studentId) : "Not in the live state"}
-        </dd>
-        <dt className="text-muted">Pickup</dt>
-        <dd className="font-semibold">
-          {request ? locationName(campus, request.pickupId) : "Unknown"}
-          {request && <TapInBadge arrival={arrivalState(request, passengerOf(trip, request.id))} />}
-        </dd>
-        <dt className="text-muted">Drop-off</dt>
-        <dd className="font-semibold">{request ? locationName(campus, request.destinationId) : "Unknown"}</dd>
-        {request && (
-          <>
-            <dt className="text-muted">Fare</dt>
-            <dd>{formatJod(request.fareJod)} <span className="text-[13px] text-muted">(simulated, no payment)</span></dd>
-            <dt className="text-muted">Requested</dt>
-            <dd>{request.id} · {formatSimTime(request.createdAt)}</dd>
-          </>
-        )}
-      </dl>
-
-      <div className="flex flex-wrap gap-1.5 text-[13px]" aria-label="Server statuses">
-        <span className="rounded-full bg-surface px-2 py-0.5 text-muted">Ride: <b className="text-ink">{request?.status ?? "unknown"}</b></span>
-        <span className="rounded-full bg-surface px-2 py-0.5 text-muted">Trip: <b className="text-ink">{trip.status}</b></span>
-        <span className="rounded-full bg-surface px-2 py-0.5 text-muted">Cart: <b className="text-ink">{cart?.status ?? "unknown"}</b></span>
-      </div>
+      <StatusChips items={[["Ride", request?.status ?? "unknown"], ["Trip", trip.status], ["Cart", cart?.status ?? "unknown"]]} />
 
       {forThisTrip && state.status === "error" && (
-        <p role="alert" className="rounded-tile bg-red-50 px-3 py-2 text-sm text-ink" data-testid="action-error">
+        <p role="alert" className="rounded-tile bg-danger-tint px-3 py-2 text-sm text-ink" data-testid="action-error">
           {ACTION_LABEL[state.binding.action]} failed: {state.message}
         </p>
       )}
-      {forThisTrip && state.status === "success" && (
-        <p role="status" className="rounded-tile bg-green-50 px-3 py-2 text-sm text-ink" data-testid="action-success">
+      {forThisTrip && state.status === "success" && successNow && (
+        <p role="status" className="rounded-tile bg-success-tint px-3 py-2 text-sm text-ink" data-testid="action-success">
           {state.message}
         </p>
       )}
 
-      {next ? (
-        <PrimaryButton
-          type="button"
-          disabled={pending}
-          aria-busy={pending}
-          onClick={() => void actions.submit(next)}
-          data-testid="trip-action"
-        >
-          {pending ? "Sending…" : ACTION_LABEL[next.action]}
-        </PrimaryButton>
-      ) : (
-        <p className="rounded-tile bg-surface px-3 py-2 text-sm text-muted" data-testid="trip-unavailable">{unavailable}</p>
-      )}
-      {pending && <p className="text-center text-[13px] text-muted" role="status">Waiting for the server to confirm…</p>}
-    </Card>
+      <ActionBar>
+        {next ? (
+          <PrimaryButton
+            size="lg"
+            type="button"
+            disabled={pending}
+            aria-busy={pending}
+            onClick={() => void actions.submit(next)}
+            data-testid="trip-action"
+          >
+            {pending ? "Sending…" : ACTION_LABEL[next.action]}
+          </PrimaryButton>
+        ) : (
+          <p className="rounded-tile bg-surface px-3 py-2.5 text-center text-sm text-ink-2" data-testid="trip-unavailable">{unavailable}</p>
+        )}
+        {pending && <p className="text-center text-[13px] text-muted" role="status">Waiting for the server to confirm…</p>}
+      </ActionBar>
+    </section>
   );
 }
-

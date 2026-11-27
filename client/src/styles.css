@@ -1,43 +1,267 @@
 @import "tailwindcss";
 
 /*
- * Jeeny INSIDE design tokens v0 (Appendix B of the Foundation Plan).
- * Jeeny-inspired, not Jeeny assets: magenta used sparingly on white, light gray surfaces,
- * pill buttons, round icon buttons, teal only for rewards / impact.
- * Typeface decision is deferred to the design pass; system sans until then.
+ * Jeeny INSIDE design tokens v2, "Map-First Calm Transit" (Option B, approved), light and dark.
+ * Jeeny-inspired, not Jeeny assets: magenta only for action, selection and pickup, purple only for
+ * destinations, status always as words plus colour plus shape. System sans (no font dependency).
+ * Values are this project's own; none is an official Jeeny colour.
+ *
+ * Every colour is a CSS variable on <html>, switched by data-theme="light" | "dark" (set before first
+ * paint by the inline script in index.html, then by ui/theme.ts). Utilities below read those variables,
+ * so a component written once works in both themes.
  */
-@theme {
-  --color-brand: #e4097e;
-  --color-brand-strong: #c00669;
-  --color-brand-tint: #fde8f2;
-  --color-accent: #0fa3a3; /* teal: rewards / impact only */
-  --color-accent-tint: #e0f5f5;
-  --color-dropoff: #7c3aed;
-  --color-ink: #14151a;
-  --color-muted: #6b7080;
-  --color-surface: #f4f5f7;
-  --color-line: #e6e7eb;
-  --color-map-bg: #eef0f2;
-  --color-map-path: #c9cdd3;
-  --color-map-building: #dfe2e6;
-  --color-success: #16a34a;
-  --color-danger: #dc2626;
-  --color-warning: #d97706;
+:root {
+  color-scheme: light;
+  --brand: #e4097e; /* fills: CTA, selected indicator, pickup, route */
+  --brand-press: #c00669; /* pressed / hover fill behind white text */
+  --brand-strong: #c00669; /* magenta TEXT (AA on card and on tint) */
+  --brand-tint: #fde8f2; /* selected row background */
+  --accent: #0fa3a3;
+  --accent-tint: #e0f5f5;
+  --dropoff: #7c3aed;
+  --dropoff-tint: #ede9fe;
+  --canvas: #eceef2; /* around the centred mobile app on wide screens */
+  --bg: #ffffff; /* page */
+  --card: #ffffff; /* cards, sheets, bars */
+  --ink: #14151a;
+  --ink-2: #3d4150;
+  --muted: #62677a;
+  --surface: #f4f5f7; /* inner tiles, table heads, fields */
+  --line: #e6e7eb;
+  --map-bg: #eef0f2;
+  --map-path: #c9cdd3;
+  --map-casing: #ffffff;
+  --map-building: #dfe2e6;
+  --map-parking: #e7e9ec;
+  --map-outline: #d3d7dc;
+  --map-node: #8a909c;
+  --map-parking-sign: #3b6fd8;
+  --marker: #14151a; /* cart marker disc */
+  --marker-fg: #ffffff;
+  --success: #16a34a;
+  --success-text: #15803d;
+  --success-tint: #dcfce7;
+  --warning: #d97706;
+  --warning-text: #b45309;
+  --warning-tint: #fef3c7;
+  --danger: #dc2626;
+  --danger-text: #b91c1c;
+  --danger-tint: #fee2e2;
+  --info: #2563eb; /* "Checked in (Tap-In)": never the same as boarded */
+  --info-text: #1d4ed8;
+  --info-tint: #dbeafe;
+  /* Driver "next step" panel (V-3): dark ink in light mode; a lighter, outlined slate in dark mode. */
+  --hero: #14151a;
+  --hero-fg: #ffffff;
+  --hero-muted: #c9cbd3;
+  --hero-track: #3a3d47;
+  --hero-ring: transparent;
+  --shadow-float-c: rgba(20, 21, 26, 0.08);
+  --shadow-strong-c: rgba(20, 21, 26, 0.14);
+}
 
-  --radius-tile: 1.25rem;
-  --radius-sheet: 1.75rem;
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --brand: #e4097e;
+  --brand-press: #c00669;
+  --brand-strong: #f472b6;
+  --brand-tint: #3b1128;
+  --accent: #2cc5c5;
+  --accent-tint: #0f2e2e;
+  --dropoff: #a78bfa;
+  --dropoff-tint: #261b45;
+  --canvas: #08090c;
+  --bg: #0e1015;
+  --card: #161920;
+  --ink: #eceef2;
+  --ink-2: #c4c8d2;
+  --muted: #9aa0ad;
+  --surface: #1e222b;
+  --line: #2c313c;
+  --map-bg: #1a1e26;
+  --map-path: #4a5160;
+  --map-casing: #262b35;
+  --map-building: #232833;
+  --map-parking: #20252f;
+  --map-outline: #333a47;
+  --map-node: #8a909c;
+  --map-parking-sign: #4f86f0;
+  --marker: #f4f5f7;
+  --marker-fg: #14151a;
+  --success: #22c55e;
+  --success-text: #4ade80;
+  --success-tint: #0f2e1c;
+  --warning: #f59e0b;
+  --warning-text: #fbbf24;
+  --warning-tint: #34250a;
+  --danger: #dc2626;
+  --danger-text: #f87171;
+  --danger-tint: #3a1515;
+  --info: #60a5fa;
+  --info-text: #93c5fd;
+  --info-tint: #14223d;
+  --hero: #2b3140;
+  --hero-fg: #ffffff;
+  --hero-muted: #c9cbd3;
+  --hero-track: #4a5266;
+  --hero-ring: #434c60;
+  --shadow-float-c: rgba(0, 0, 0, 0.35);
+  --shadow-strong-c: rgba(0, 0, 0, 0.5);
+}
 
-  --spacing-button: 3.5rem; /* 56px primary pill */
+@theme inline {
+  --color-brand: var(--brand);
+  --color-brand-press: var(--brand-press);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-tint: var(--brand-tint);
+  --color-accent: var(--accent);
+  --color-accent-tint: var(--accent-tint);
+  --color-dropoff: var(--dropoff);
+  --color-dropoff-tint: var(--dropoff-tint);
+  --color-canvas: var(--canvas);
+  --color-page: var(--bg);
+  --color-card: var(--card);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-surface: var(--surface);
+  --color-line: var(--line);
+  --color-map-bg: var(--map-bg);
+  --color-map-path: var(--map-path);
+  --color-map-casing: var(--map-casing);
+  --color-map-building: var(--map-building);
+  --color-map-parking: var(--map-parking);
+  --color-map-outline: var(--map-outline);
+  --color-map-node: var(--map-node);
+  --color-map-parking-sign: var(--map-parking-sign);
+  --color-marker: var(--marker);
+  --color-marker-fg: var(--marker-fg);
+  --color-success: var(--success);
+  --color-success-text: var(--success-text);
+  --color-success-tint: var(--success-tint);
+  --color-warning: var(--warning);
+  --color-warning-text: var(--warning-text);
+  --color-warning-tint: var(--warning-tint);
+  --color-danger: var(--danger);
+  --color-danger-text: var(--danger-text);
+  --color-danger-tint: var(--danger-tint);
+  --color-info: var(--info);
+  --color-info-text: var(--info-text);
+  --color-info-tint: var(--info-tint);
+  --color-hero: var(--hero);
+  --color-hero-fg: var(--hero-fg);
+  --color-hero-muted: var(--hero-muted);
+  --color-hero-track: var(--hero-track);
+  --color-hero-ring: var(--hero-ring);
+
+  /* V-1 geometry: cards 16px, large cards 18px, sheets 26px; buttons stay full pills (V-4). */
+  --radius-tile: 1rem;
+  --radius-card: 1.125rem;
+  --radius-sheet: 1.625rem;
+
+  --spacing-button: 3rem; /* 48px primary pill */
+  --spacing-button-lg: 3.25rem; /* 52px Driver action */
+
+  /* V-2: neutral, restrained elevation only; no coloured glows. */
+  --shadow-float: 0 1px 2px var(--shadow-float-c), 0 6px 18px var(--shadow-float-c);
+  --shadow-sheet: 0 -6px 24px var(--shadow-float-c);
+  --shadow-pop: 0 10px 28px var(--shadow-strong-c);
+  --shadow-bar: 0 -1px 0 var(--line), 0 -6px 18px var(--shadow-float-c);
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 html, body, #root { height: 100%; }
+
+/*
+ * Anchored sections and focused headings must land below the 64px sticky header (and above the fixed
+ * bottom bars on phones), not under them.
+ */
+html {
+  scroll-padding-top: calc(5rem + env(safe-area-inset-top));
+  scroll-padding-bottom: calc(max(var(--driver-bar-h, 0px), 4.5rem) + 1.5rem);
+}
 body {
   margin: 0;
-  background: #ffffff;
-  color: var(--color-ink);
+  background: var(--bg);
+  color: var(--ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* One visible keyboard focus style for every interactive element (pointer clicks do not show it). */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--brand-strong);
+  outline-offset: 2px;
+}
+/* On the dark Driver panel the focus ring must stay visible. */
+.on-hero :where(a, button, [tabindex]):focus-visible { outline-color: var(--hero-fg); }
+
+/*
+ * Status change cue: a single 600ms tint behind a status heading when the server reports a new phase or
+ * stage. Two identical keyframe names so consecutive changes restart the animation.
+ */
+@keyframes jeeny-flash-a { from { background-color: var(--brand-tint); } to { background-color: transparent; } }
+@keyframes jeeny-flash-b { from { background-color: var(--brand-tint); } to { background-color: transparent; } }
+.status-flash-a, .status-flash-b { border-radius: 0.375rem; }
+.status-flash-a { animation: jeeny-flash-a 600ms ease-out; }
+.status-flash-b { animation: jeeny-flash-b 600ms ease-out; }
+/* On the Driver panel a light tint would flash white; use a translucent magenta instead. */
+.on-hero .status-flash-a, .on-hero .status-flash-b { animation-name: jeeny-flash-hero; }
+@keyframes jeeny-flash-hero { from { background-color: rgba(228, 9, 126, 0.35); } to { background-color: transparent; } }
+
+/* Mode switcher entrance: sheet slides up on phones, menu fades in from 640px. */
+@keyframes jeeny-sheet-in { from { transform: translateY(1rem); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes jeeny-pop-in { from { transform: translateY(-0.25rem) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes jeeny-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.anim-sheet-in { animation: jeeny-sheet-in 200ms cubic-bezier(0.2, 0, 0, 1); }
+.anim-fade-in { animation: jeeny-fade-in 160ms ease-out; }
+@media (min-width: 640px) {
+  .anim-sheet-in { animation: jeeny-pop-in 160ms cubic-bezier(0.2, 0, 0, 1); transform-origin: top left; }
+}
+
+/* Native selects styled as rows: hide the platform arrow, we draw our own chevron. */
+/* Busy spinner. With reduced motion it stays as a still ring segment (the label still says "Sending…"). */
+.jeeny-spinner { animation: jeeny-spin 0.8s linear infinite; }
+@keyframes jeeny-spin { to { transform: rotate(360deg); } }
+
+/* Radio buttons: a clear outline when unchecked and a filled ring when checked, in both themes. */
+input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  place-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  border: 2px solid var(--ink-2);
+  background: var(--card);
+  cursor: pointer;
+}
+input[type="radio"]::before {
+  content: "";
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 9999px;
+  transform: scale(0);
+  background: var(--brand);
+  transition: transform 120ms ease-out;
+}
+input[type="radio"]:checked { border-color: var(--brand); }
+input[type="radio"]:checked::before { transform: scale(1); }
+input[type="radio"]:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.select-row { appearance: none; -webkit-appearance: none; background: transparent; }
+
+/* Motion is short and functional; with reduced motion it is removed. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
 }

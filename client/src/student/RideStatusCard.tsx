@@ -1,7 +1,9 @@
 import { useRef, useState } from "react";
+import { useFlashOnChange } from "../ui/useFlashOnChange";
 import { Link } from "react-router-dom";
 import { PHASE_LABEL, TRACK_STEPS, canCancel, phaseDetail, sharedCancelNote, sharedRideLines, trackStepIndex, type RidePhase, type StudentRide } from "../lib/studentRides";
 import { Badge } from "../ui/Badge";
+import { BusyLabel } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { arrivalState, passengerOf, showTapInEntry, tapPath } from "../lib/tapIn";
 import { FareLine } from "./FareInfo";
@@ -15,7 +17,7 @@ const PHASE_TONE: Record<RidePhase, string> = {
   at_pickup: "bg-brand text-white",
   in_progress: "bg-brand-tint text-ink",
   at_destination: "bg-brand-tint text-ink",
-  completed: "bg-green-50 text-ink",
+  completed: "bg-success-tint text-ink",
   cancelled: "bg-surface text-muted",
 };
 
@@ -36,7 +38,7 @@ function Tracker({ phase }: { phase: RidePhase }) {
   if (phase === "cancelled") return null;
   const current = trackStepIndex(phase);
   return (
-    <ol className="grid grid-cols-3 gap-x-1 gap-y-2 sm:grid-cols-6" aria-label="Ride progress">
+    <ol className="grid grid-cols-3 gap-x-1.5 gap-y-2.5" aria-label="Ride progress">
       {TRACK_STEPS.map((s, i) => (
         <li key={s.phase} className="flex flex-col items-center gap-1 text-center" aria-current={i === current ? "step" : undefined}>
           <span className={`h-1.5 w-full rounded-full ${i <= current ? "bg-brand" : "bg-line"}`} aria-hidden="true" />
@@ -59,6 +61,7 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
   const [cancel, setCancel] = useState<{ step: "idle" | "confirm" | "sending" } | { step: "error"; message: string }>({ step: "idle" });
 
   const sending = useRef(false); // guards against a second tap before React re-renders
+  const flash = useFlashOnChange(ride.phase);
   const sharedLines = sharedRideLines(ride);
   const cancelNote = sharedCancelNote(ride);
 
@@ -82,9 +85,9 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
         <div>
           <div className="text-[13px] text-muted">
             {ride.active ? "Your ride" : "Ride"} · {ride.request.id}
-            {ride.request.mode === "shared" && <> · <span className="font-bold text-brand" data-testid="ride-shared">Shared</span></>}
+            {ride.request.mode === "shared" && <> · <span className="font-bold text-brand-strong" data-testid="ride-shared">Shared</span></>}
           </div>
-          <h2 id={`ride-${ride.request.id}`} className="text-lg font-extrabold tracking-tight" data-testid="ride-phase">
+          <h2 id={`ride-${ride.request.id}`} tabIndex={-1} className={`-mx-1 scroll-mt-12 px-1 text-2xl font-extrabold tracking-tight ${flash}`} data-testid="ride-phase">
             {PHASE_LABEL[ride.phase]}
           </h2>
         </div>
@@ -121,23 +124,23 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
       <TapInLine ride={ride} />
 
       {cancel.step === "error" && (
-        <p role="alert" className="rounded-tile bg-red-50 px-3 py-2 text-sm text-ink">
+        <p role="alert" className="rounded-tile bg-danger-tint px-3 py-2 text-sm text-ink">
           Couldn't cancel: {cancel.message}
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2">
         {showDetailsLink && (
-          <Link to={`/student/rides/${encodeURIComponent(ride.request.id)}`} className="inline-flex min-h-11 items-center rounded-full bg-surface px-4 py-2 text-sm font-semibold text-ink">
+          <Link to={`/student/rides/${encodeURIComponent(ride.request.id)}`} className="inline-flex min-h-11 items-center rounded-full bg-card px-4 py-2 text-sm font-semibold text-ink ring-1 ring-line hover:bg-surface">
             Ride details
           </Link>
         )}
         {showTapInEntry(ride) && (
-          <Link to={tapPath(campus.id, ride.request.pickupId)} className="inline-flex min-h-11 items-center rounded-full bg-brand-tint px-4 py-2 text-sm font-semibold text-ink" data-testid="tap-entry">
+          <Link to={tapPath(campus.id, ride.request.pickupId)} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-info-tint px-4 py-2 text-sm font-semibold text-ink ring-1 ring-info/30" data-testid="tap-entry">
             I'm at my pickup
           </Link>
         )}
         {canCancel(ride) && cancel.step !== "confirm" && cancel.step !== "sending" && (
-          <button type="button" onClick={() => setCancel({ step: "confirm" })} className="inline-flex min-h-11 items-center rounded-full px-4 py-2 text-sm font-semibold text-danger ring-1 ring-line">
+          <button type="button" onClick={() => setCancel({ step: "confirm" })} className="inline-flex min-h-11 items-center rounded-full px-4 py-2 text-sm font-semibold text-danger-text ring-1 ring-line">
             Cancel ride
           </button>
         )}
@@ -149,9 +152,10 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
               type="button"
               onClick={confirmCancel}
               disabled={cancel.step === "sending"}
-              className="inline-flex min-h-11 items-center rounded-full bg-danger px-4 py-2 font-semibold text-white disabled:opacity-50"
+              aria-busy={cancel.step === "sending"}
+              className={`inline-flex min-h-11 items-center rounded-full px-4 py-2 font-semibold ${cancel.step === "sending" ? "cursor-progress bg-danger text-white" : "bg-danger text-white"}`}
             >
-              {cancel.step === "sending" ? "Cancelling…" : "Yes, cancel"}
+              {cancel.step === "sending" ? <BusyLabel>Cancelling…</BusyLabel> : "Yes, cancel"}
             </button>
             <button type="button" onClick={() => setCancel({ step: "idle" })} disabled={cancel.step === "sending"} className="inline-flex min-h-11 items-center rounded-full px-4 py-2 font-semibold ring-1 ring-line">
               Keep ride
@@ -174,7 +178,7 @@ function TapInLine({ ride }: { ride: StudentRide }) {
   const where = locationName(campus, a.locationId);
   if (a.kind === "current") {
     return (
-      <p className="rounded-tile bg-brand-tint px-3 py-2 text-[13px] text-ink" data-testid="ride-tapin" data-arrival="current">
+      <p className="flex items-baseline gap-2 rounded-tile bg-info-tint px-3 py-2 text-[13px] text-ink before:inline-block before:h-0 before:w-0 before:shrink-0 before:border-x-[5px] before:border-b-[9px] before:border-x-transparent before:border-b-info before:content-['']" data-testid="ride-tapin" data-arrival="current">
         Tapped in at {where} · {formatSimTime(a.atMs)}. Wait here: your driver confirms boarding.
       </p>
     );

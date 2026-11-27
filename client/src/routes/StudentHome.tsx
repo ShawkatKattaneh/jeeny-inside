@@ -9,6 +9,7 @@ import { LiveStatus } from "../student/LiveStatus";
 import { RideDetailView } from "../student/RideDetailView";
 import { RidesView } from "../student/RidesView";
 import { StudentProvider, useStudent } from "../student/studentContext";
+import { HomeIcon, RidesIcon } from "../ui/icons";
 import { AreaLayout } from "./AreaLayout";
 
 /**
@@ -25,34 +26,49 @@ function StudentArea({ persona, store, api }: { persona: Persona; store?: Realti
   return (
     <RealtimeProvider store={store}>
       <StudentProvider persona={persona} campus={campus} api={api}>
+        <div className="flex flex-1 flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))]">
+          <Routes>
+            <Route index element={<HomeView />} />
+            <Route path="rides" element={<RidesView />} />
+            <Route path="rides/:requestId" element={<RideDetailView />} />
+            <Route path="*" element={<Navigate to="/student" replace />} />
+          </Routes>
+        </div>
         <StudentNav />
-        <Routes>
-          <Route index element={<HomeView />} />
-          <Route path="rides" element={<RidesView />} />
-          <Route path="rides/:requestId" element={<RideDetailView />} />
-          <Route path="*" element={<Navigate to="/student" replace />} />
-        </Routes>
       </StudentProvider>
     </RealtimeProvider>
   );
 }
 
+/** Live connection chip, shown in each Student screen's header area (on the map on Home). */
+export function StudentLive({ className = "" }: { className?: string }) {
+  const { realtime } = useStudent();
+  return <span className={className}><LiveStatus status={realtime.status} /></span>;
+}
+
+/**
+ * Student navigation. The approved direction is five tabs (Home, Quick, My Rides, Campus Map, Profile);
+ * only the destinations that exist are shown, so there are no dead links. Quick, Campus Map and Profile
+ * are added here when their screens are built. Always a bottom tab bar, kept inside the phone column.
+ */
 function StudentNav() {
-  const { realtime, activeRide } = useStudent();
+  const { activeRide } = useStudent();
   const tab = ({ isActive }: { isActive: boolean }) =>
-    `inline-flex min-h-11 items-center rounded-full px-4 py-2 text-sm font-semibold transition ${isActive ? "bg-ink text-white" : "text-ink ring-1 ring-line"}`;
+    `relative flex flex-1 flex-col items-center justify-center gap-0.5 px-2 text-[13px] transition-colors duration-150 ${isActive ? "font-bold text-brand-strong before:absolute before:inset-x-8 before:top-0 before:h-[3px] before:rounded-b-full before:bg-brand before:content-['']" : "font-semibold text-muted hover:text-ink"}`;
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <nav aria-label="Student" className="flex gap-2">
-        <NavLink to="/student" end className={tab}>
-          Home
-        </NavLink>
-        <NavLink to="/student/rides" className={tab}>
-          Your rides
-          {activeRide && <><span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-brand align-middle" aria-hidden="true" /><span className="sr-only"> (active ride)</span></>}
-        </NavLink>
-      </nav>
-      <LiveStatus status={realtime.status} />
-    </div>
+    <nav
+      aria-label="Student"
+      className="fixed inset-x-0 bottom-0 z-20 mx-auto flex h-[calc(3.5rem+env(safe-area-inset-bottom))] max-w-[430px] border-t border-line bg-card px-2 pb-[env(safe-area-inset-bottom)] shadow-bar"
+    >
+      <NavLink to="/student" end className={tab}>
+        <HomeIcon />
+        Home
+      </NavLink>
+      <NavLink to="/student/rides" className={tab}>
+        <span className="relative"><RidesIcon />{activeRide && <span className="absolute -right-1 -top-0.5 h-2.5 w-2.5 rounded-full bg-brand ring-2 ring-card" aria-hidden="true" />}</span>
+        My Rides
+        {activeRide && <span className="sr-only"> (active ride)</span>}
+      </NavLink>
+    </nav>
   );
 }

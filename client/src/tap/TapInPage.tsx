@@ -15,7 +15,9 @@ import {
 import { useApi } from "../lib/useApi";
 import { formatSimTime, locationName } from "../student/format";
 import { StillConnectingNote, StudentProvider, useStudent } from "../student/studentContext";
+import { Badge } from "../ui/Badge";
 import { BrandLockup } from "../ui/Brand";
+import { ModeSwitcher } from "../ui/ModeSwitcher";
 import { PrimaryButton } from "../ui/Button";
 import { Card } from "../ui/Card";
 
@@ -62,21 +64,31 @@ export function TapInPage({ store, api, tapApi, personas }: { store?: RealtimeSt
   }
 
   return (
-    <div className="mx-auto flex min-h-full max-w-md flex-col gap-4 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))]">
-      <header className="flex items-center gap-3 py-2">
-        <BrandLockup size={28} />
-        <span className="ml-auto truncate text-right text-[13px] text-muted">
-          {persona?.role === "student" ? <span className="block font-semibold text-ink">{persona.name}</span> : null}
-          Tap-In
-        </span>
+    <div className="min-h-full bg-canvas">
+    <div className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col bg-page min-[431px]:border-x min-[431px]:border-line min-[431px]:shadow-pop">
+      <header className="sticky top-0 z-30 border-b border-line bg-card pt-[env(safe-area-inset-top)]">
+        <div className="flex h-16 items-center gap-3 px-4">
+          <ModeSwitcher current={persona?.role === "student" ? "student" : null} />
+          <span className="shrink-0"><BrandLockup size={28} compact /></span>
+          {persona?.role === "student" && (
+            <span className="ml-auto min-w-0 flex-1 text-right leading-tight">
+              <span className="block truncate text-[14px] font-bold text-ink">{persona.name}</span>
+              <span className="block truncate text-[13px] text-muted">Demo persona</span>
+            </span>
+          )}
+        </div>
       </header>
+      <div className="flex w-full flex-1 flex-col gap-4 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-5">
       <section className="flex flex-col gap-1" aria-label="Tap point">
         <div className="text-[13px] text-muted">Pickup point · {campus.name}</div>
-        <h1 className="text-2xl font-extrabold tracking-tight" data-testid="tap-point">
+        <h1 className="text-[26px] font-extrabold leading-tight tracking-tight" data-testid="tap-point">
           {point.kind === "ok" || point.kind === "not_supported" ? point.location.name : "Unknown tap point"}
         </h1>
+        <p className="mt-1"><Badge tone="neutral">Tap-In (check-in only)</Badge></p>
       </section>
       {body}
+      </div>
+    </div>
     </div>
   );
 }
@@ -90,8 +102,8 @@ function PointProblem({ point, campusName }: { point: Exclude<ReturnType<typeof 
         : `${point.location.name} isn't a pickup point, so you can't tap in here. Nothing was recorded.`;
   return (
     <>
-      <p role="alert" className="rounded-tile bg-red-50 px-4 py-3 text-sm text-ink" data-testid="tap-point-problem">{text}</p>
-      <Link to="/student" className="inline-flex min-h-11 items-center self-start text-sm font-semibold text-brand">Go to the Student app</Link>
+      <p role="alert" className="rounded-tile bg-danger-tint px-4 py-3 text-sm text-ink" data-testid="tap-point-problem">{text}</p>
+      <Link to="/student" className="inline-flex min-h-11 items-center self-start text-sm font-semibold text-brand-strong">Go to the Student app</Link>
     </>
   );
 }
@@ -101,18 +113,18 @@ function ChooseStudent({ point, current, injected, onChoose }: { point: Location
   const loaded = useApi(injected ? () => Promise.resolve(injected) : fetchPersonas);
   return (
     <Card className="flex flex-col gap-3 p-4" data-testid="tap-choose-student">
-      <h2 className="text-base font-bold">Who is tapping in?</h2>
+      <h2 className="text-[17px] font-bold">Who is tapping in?</h2>
       <p className="text-sm text-muted">
         {current ? `Tap-In is for students, and this phone is set to ${current.name}.` : "This phone has no demo persona yet."} Choose your student persona to continue at {point.name}.
         No login: the choice is remembered on this phone.
       </p>
       {loaded.status === "loading" && <p className="text-sm text-muted">Loading personas…</p>}
-      {loaded.status === "error" && <p role="alert" className="text-sm text-danger">Could not load personas: {loaded.message}</p>}
+      {loaded.status === "error" && <p role="alert" className="text-sm text-danger-text">Could not load personas: {loaded.message}</p>}
       {loaded.status === "ready" && (
         <ul className="flex flex-col gap-2">
           {loaded.data.filter((p) => p.role === "student").map((p) => (
             <li key={p.id}>
-              <button type="button" onClick={() => onChoose(p)} className="flex w-full items-center gap-3 rounded-tile bg-surface px-4 py-3 text-left">
+              <button type="button" onClick={() => onChoose(p)} className="flex min-h-14 w-full items-center gap-3 rounded-tile bg-card px-4 py-3 text-left ring-1 ring-line transition-colors duration-150 hover:bg-surface">
                 <span className="font-bold">{p.name}</span>
                 <span className="text-[13px] text-muted">{p.subtitle}</span>
               </button>
@@ -162,13 +174,13 @@ function TapInScreen({ point, tapApi }: { point: Location; tapApi?: TapInApi }) 
     const pending = rides.find((r) => r.active && r.request.status === "requested");
     return (
       <Card className="flex flex-col gap-2 p-4" data-testid="tap-no-ride">
-        <h2 className="text-base font-bold">No ride to tap in for here</h2>
+        <h2 className="text-[17px] font-bold">No ride to tap in for here</h2>
         <p className="text-sm text-muted">
           {pending
             ? `Your ride ${pending.request.id} doesn't have a cart yet. You can tap in once a cart is assigned.`
             : "You don't have a ride with a cart assigned. Book a ride first, then tap in at its pickup point."}
         </p>
-        <Link to="/student" className="inline-flex min-h-11 items-center self-start text-sm font-semibold text-brand">Go to the Student app</Link>
+        <Link to="/student" className="inline-flex min-h-11 items-center self-start text-sm font-semibold text-brand-strong">Go to the Student app</Link>
       </Card>
     );
   }
@@ -176,7 +188,7 @@ function TapInScreen({ point, tapApi }: { point: Location; tapApi?: TapInApi }) 
   return (
     <>
       <Card className="flex flex-col gap-3 p-4">
-        <h2 className="text-base font-bold">{options.length > 1 ? "Choose the ride you're tapping in for" : "Your ride"}</h2>
+        <h2 className="text-[17px] font-bold">{options.length > 1 ? "Choose the ride you're tapping in for" : "Your ride"}</h2>
         <ul className="flex flex-col gap-2" data-testid="tap-candidates">
           {candidates.map((c) => (
             <CandidateRow
@@ -196,7 +208,7 @@ function TapInScreen({ point, tapApi }: { point: Location; tapApi?: TapInApi }) 
       </Card>
 
       {submit.step === "error" && (
-        <p role="alert" className="rounded-tile bg-red-50 px-4 py-3 text-sm text-ink" data-testid="tap-error">
+        <p role="alert" className="rounded-tile bg-danger-tint px-4 py-3 text-sm text-ink" data-testid="tap-error">
           <b>{TAP_IN_ERROR_TEXT[submit.code] ?? "Tap-In wasn't recorded."}</b> {submit.message}
           <span className="mt-1 block text-[13px]">Nothing was recorded.</span>
         </p>
@@ -239,7 +251,7 @@ function CandidateRow({ c, pointName, pickable, checked, onPick, campusLocation 
     <span className="flex min-w-0 flex-col">
       <span className="font-semibold">{r.id} · {campusLocation(r.pickupId)} → {campusLocation(r.destinationId)}</span>
       <span className={`text-[13px] ${checked ? "text-ink" : "text-muted"}`}>Ride status: {PHASE_LABEL[c.ride.phase]}</span>
-      <span className={`text-[13px] ${c.kind === "other_pickup" ? "text-danger" : "text-ink"}`} data-testid={`tap-note-${r.id}`}>{note}</span>
+      <span className={`text-[13px] ${c.kind === "other_pickup" ? "text-danger-text" : "text-ink"}`} data-testid={`tap-note-${r.id}`}>{note}</span>
     </span>
   );
   return (
@@ -279,7 +291,7 @@ export function TapInResult({ result, point }: { result: TapInResponse; point: L
       {historyNote && <p className="rounded-tile bg-surface px-3 py-2 text-sm" data-testid="tap-history-note">{historyNote}</p>}
       <p className="text-[13px] text-muted">Ride {request.id} · recorded at {formatSimTime(tapIn.atMs)} (simulation time)</p>
       <p className="text-[13px] text-muted">{TAP_IN_LIMITS}</p>
-      <Link to={`/student/rides/${encodeURIComponent(request.id)}`} className="inline-flex min-h-11 items-center self-start text-sm font-semibold text-brand">See your ride</Link>
+      <Link to={`/student/rides/${encodeURIComponent(request.id)}`} className="inline-flex min-h-11 items-center self-start text-sm font-semibold text-brand-strong">See your ride</Link>
     </Card>
   );
 }

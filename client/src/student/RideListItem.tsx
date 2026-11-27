@@ -10,15 +10,15 @@ export function RideListItem({ ride }: { ride: StudentRide }) {
   const r = ride.request;
   return (
     <li>
-      <Link to={`/student/rides/${encodeURIComponent(r.id)}`} className="flex items-center gap-3 rounded-tile bg-surface px-4 py-3 active:bg-brand-tint" data-testid="ride-item">
+      <Link to={`/student/rides/${encodeURIComponent(r.id)}`} className="flex min-h-14 items-center gap-3 bg-card px-4 py-3 transition-colors duration-150 hover:bg-surface active:bg-brand-tint" data-testid="ride-item">
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-bold">
+          <span className="block truncate text-[15px] font-bold">
             {locationName(campus, r.pickupId)} <span className="text-muted" aria-label="to">→</span> {locationName(campus, r.destinationId)}
           </span>
           <span className="mt-0.5 flex flex-wrap items-center gap-2 text-[13px] text-muted">
             <PhasePill phase={ride.phase} />
             <span>{r.id}</span>
-            {r.mode === "shared" && <span className="font-bold text-brand">Shared</span>}
+            {r.mode === "shared" && <span className="font-bold text-brand-strong">Shared</span>}
             <span>{formatSimTime(r.createdAt)}</span>
             <span className="text-[13px]">{r.freeLoyaltyRide ? "Free" : formatJod(r.fareJod)} (simulated)</span>
           </span>

@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { PHASE_LABEL } from "../lib/studentRides";
 import { passengerOf } from "../lib/tapIn";
 import { formatJod, formatSimTime, locationName } from "./format";
+import { LiveStatus } from "./LiveStatus";
 import { RideStatusCard } from "./RideStatusCard";
 import { StudentMap } from "./StudentMap";
 import { useStudent } from "./studentContext";
@@ -18,9 +19,9 @@ export function RideDetailView() {
 
   if (!ride) {
     return (
-      <section className="flex flex-col gap-3">
-        <Link to="/student/rides" className="inline-flex min-h-11 items-center self-start text-sm font-semibold text-brand">← Your rides</Link>
-        <p className="rounded-tile bg-surface px-4 py-6 text-center text-sm text-muted" role="status">
+      <section className="flex flex-col gap-3 px-4 pb-6 pt-3">
+        <Link to="/student/rides" className="inline-flex min-h-11 items-center self-start text-sm font-semibold text-brand-strong">← Your rides</Link>
+        <p className="rounded-card bg-surface px-4 py-6 text-center text-sm text-muted" role="status">
           {realtime.data === null ? "Loading ride…" : "This ride was not found among your rides."}
         </p>
       </section>
@@ -47,23 +48,22 @@ export function RideDetailView() {
   ];
 
   return (
-    <section className="grid gap-4 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] md:items-start">
-      <div className="flex flex-col gap-3 md:order-2">
-        <Link to="/student/rides" className="inline-flex min-h-11 items-center self-start text-sm font-semibold text-brand">← Your rides</Link>
-        <RideStatusCard ride={ride} showDetailsLink={false} />
-        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-tile bg-surface px-4 py-3 text-sm">
-          {rows.map(([k, v]) => (
-            <div key={k} className="contents">
-              <dt className="text-muted">{k}</dt>
-              <dd className="break-words font-semibold">{v}</dd>
-            </div>
-          ))}
-        </dl>
-        <p className="text-[13px] text-muted">Times are simulation time since the server started, not clock time.</p>
+    <section className="flex flex-col gap-4 px-4 pb-6 pt-3">
+      <div className="flex items-center justify-between gap-3">
+        <Link to="/student/rides" className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-strong">← Your rides</Link>
+        <LiveStatus status={realtime.status} />
       </div>
-      <div className="md:order-1">
-        <StudentMap ride={ride.active ? ride : null} pickupId={r.pickupId} destinationId={r.destinationId} />
-      </div>
+      <StudentMap ride={ride.active ? ride : null} pickupId={r.pickupId} destinationId={r.destinationId} />
+      <RideStatusCard ride={ride} showDetailsLink={false} />
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-card bg-surface px-4 py-3 text-sm ring-1 ring-line">
+        {rows.map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt className="text-muted">{k}</dt>
+            <dd className="break-words font-semibold">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="text-[13px] text-muted">Times are simulation time since the server started, not clock time.</p>
     </section>
   );
 }

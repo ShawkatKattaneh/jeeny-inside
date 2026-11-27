@@ -20,7 +20,7 @@ function Fig({ label, value, hint, testId }: { label: string; value: string | nu
   return (
     <div className="rounded-tile bg-surface px-3 py-2">
       <div className="text-[13px] text-muted">{label}</div>
-      <div className="text-lg font-extrabold" data-testid={testId}>{value}</div>
+      <div className="text-lg font-extrabold tabular-nums" data-testid={testId}>{value}</div>
       {hint && <div className="text-[13px] text-muted">{hint}</div>}
     </div>
   );
@@ -202,9 +202,9 @@ export function AnalyticsContent({ data }: { data: AnalyticsResponse }) {
 /** The analytics card for one load state: loading, error (with any older result) or ready. */
 export function AnalyticsView({ load }: { load: AnalyticsLoad }) {
   return (
-    <Card id="ops-analytics" className="scroll-mt-4 flex flex-col gap-3 p-4" role="region" aria-labelledby="analytics-title">
+    <Card id="ops-analytics" className="scroll-mt-24 flex flex-col gap-3 p-4" role="region" aria-labelledby="analytics-title">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="analytics-title" className="text-base font-extrabold">Campus analytics</h2>
+        <h2 id="analytics-title" className="text-[17px] font-extrabold">Campus analytics</h2>
         <div className="flex flex-wrap gap-1.5">
           <Badge emphasis="strong">Descriptive only</Badge>
           <Badge emphasis="strong">Simulated clock</Badge>
@@ -212,7 +212,7 @@ export function AnalyticsView({ load }: { load: AnalyticsLoad }) {
       </div>
       {load.status === "loading" && <p role="status" className="text-sm text-muted" data-testid="an-loading">Loading analytics…</p>}
       {load.status === "error" && (
-        <p role="alert" className="rounded-tile bg-red-50 px-3 py-2 text-[13px] text-ink" data-testid="an-error">
+        <p role="alert" className="rounded-tile bg-danger-tint px-3 py-2 text-[13px] text-ink" data-testid="an-error">
           Could not load analytics: {load.message}{load.data ? ` Showing the last result (revision ${load.data.revision}), which may be out of date.` : ""}
         </p>
       )}

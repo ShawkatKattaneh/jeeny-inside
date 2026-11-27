@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { Persona } from "../../../shared/schemas";
 import { useCampus } from "../lib/campusContext";
 import { createDriverActionController } from "../lib/driverActions";
@@ -52,7 +52,7 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
   const header = (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-2xl font-extrabold tracking-tight">Driver Mode</h1>
+        <h1 className="text-[26px] font-extrabold leading-tight tracking-tight">Driver Mode</h1>
         <Badge>Demo persona</Badge>
       </div>
       <LiveStatus status={realtime.status} />
@@ -61,45 +61,45 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
 
   if (!data || !link) {
     return (
-      <>
+      <Page>
         {header}
-        <p className="rounded-tile bg-surface px-4 py-6 text-center text-sm text-muted" role="status">Loading the live fleet…</p>
-      </>
+        <p className="rounded-card bg-surface px-4 py-6 text-center text-sm text-muted" role="status">Loading the live fleet…</p>
+      </Page>
     );
   }
 
   if (data.campusId !== campus.id) {
     return (
-      <>
+      <Page>
         {header}
-        <p role="alert" className="rounded-tile bg-red-50 px-4 py-3 text-sm text-ink">
+        <p role="alert" className="rounded-tile bg-danger-tint px-4 py-3 text-sm text-ink">
           The server is now running a different campus. Reload the page to continue.
         </p>
-      </>
+      </Page>
     );
   }
 
   const mismatchNote = link.mismatch && (
-    <p className="rounded-tile bg-amber-50 px-4 py-3 text-[13px] text-warning" data-testid="cart-mismatch">
+    <p className="rounded-tile bg-warning-tint px-4 py-3 text-[13px] text-warning-text" data-testid="cart-mismatch">
       Your demo profile lists {link.personaCartId}, but the live fleet {link.carts.length ? `assigns you ${link.carts.map((c) => c.id).join(", ")}` : "does not assign you any cart"}. Driver Mode follows the live fleet.
     </p>
   );
 
   if (link.carts.length === 0) {
     return (
-      <>
+      <Page>
         {header}
         {mismatchNote}
         <Card className="px-4 py-6 text-center text-sm" data-testid="no-cart">
           <p className="font-semibold">No cart is assigned to you</p>
           <p className="mt-1 text-muted">No cart in the live fleet has you ({persona.id}) as its driver, so there are no trips to show.</p>
         </Card>
-      </>
+      </Page>
     );
   }
 
   return (
-    <>
+    <Page>
       {header}
       {mismatchNote}
 
@@ -108,7 +108,7 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
           <label htmlFor="cart-select" className="mb-1 block text-[13px] font-semibold text-muted">The live fleet lists you as the driver of {link.carts.length} carts. Choose one.</label>
           <select
             id="cart-select"
-            className="h-12 w-full rounded-tile bg-surface px-3 text-sm font-semibold ring-1 ring-line"
+            className="h-12 w-full rounded-tile bg-surface px-3 text-[15px] font-semibold ring-1 ring-line"
             value={selectedCartId ?? ""}
             onChange={(e) => { setSelectedCartId(e.target.value || null); setSelectedTripId(null); actions.reset(); }}
           >
@@ -119,10 +119,8 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
       )}
 
       {cart && (
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] md:items-start">
+        <>
           <section className="flex flex-col gap-3" aria-label="Your cart and trip">
-            <CartCard cart={cart} campus={campus} />
-
             {finished && (
               <p role="status" className="rounded-tile bg-surface px-4 py-3 text-sm" data-testid="trip-finished">
                 {finished.id} is {finished.status}.{" "}
@@ -148,7 +146,7 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
                             aria-pressed={view?.trip.id === t.trip.id}
                             disabled={actionState.status === "pending"}
                             onClick={() => { setSelectedTripId(t.trip.id); actions.reset(); }}
-                            className={`flex min-h-11 w-full items-center justify-between rounded-tile px-3 py-2 text-left text-sm ring-1 ${view?.trip.id === t.trip.id ? "bg-brand-tint ring-brand" : "bg-surface ring-line"}`}
+                            className={`flex min-h-12 w-full items-center justify-between rounded-tile px-3 py-2 text-left text-[15px] ring-1 ${view?.trip.id === t.trip.id ? "bg-brand-tint ring-brand" : "bg-card ring-line hover:bg-surface"}`}
                           >
                             <span className="font-semibold">{t.trip.id}</span>
                             <span className="text-[13px] text-muted">{STAGE_LABEL[t.stage]}</span>
@@ -161,10 +159,12 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
                 {view && <TripCard view={view} campus={campus} personas={personas} data={data} actions={actions} />}
               </>
             )}
+
+            <CartCard cart={cart} campus={campus} />
           </section>
 
           <section aria-label="Campus map">
-            <figure className="flex flex-col gap-2">
+            <figure className="flex flex-col gap-2 rounded-card bg-card p-2 ring-1 ring-line">
               <CampusMap
                 campus={campus}
                 overlay={{
@@ -178,14 +178,19 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
                   })(),
                 }}
               />
-              <figcaption className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
+              <figcaption className="flex flex-wrap items-center gap-2 px-2 pb-1 text-[13px] text-muted">
                 {campus.fictional && <Badge>Fictional campus</Badge>}
                 <span>Demo campus map: schematic, not to scale, not GPS. Your cart is shown at its simulated position; it moves only when the simulation advances.</span>
               </figcaption>
             </figure>
           </section>
-        </div>
+        </>
       )}
-    </>
+    </Page>
   );
+}
+
+/** Driver screens: phone padding, plus room for the fixed action bar when a trip shows one. */
+function Page({ children }: { children: ReactNode }) {
+  return <div className="flex flex-col gap-4 px-4 pb-[calc(var(--driver-bar-h,0px)+1.5rem)] pt-4">{children}</div>;
 }

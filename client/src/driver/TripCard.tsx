@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from "react";
 import type { CampusConfig, Persona, StateSnapshot } from "../../../shared/schemas";
 import type { DriverActionController } from "../lib/driverActions";
-import { ACTION_LABEL, STAGE_LABEL, type CartTrip } from "../lib/driverWork";
+import { ACTION_LABEL, STAGE_LABEL, arrived, type CartTrip } from "../lib/driverWork";
+import { DriverEta } from "./DriverEta";
 import { PrimaryButton } from "../ui/Button";
 import { useFlashOnChange } from "../ui/useFlashOnChange";
 import { useCurrentStageSuccess } from "./useCurrentStageSuccess";
@@ -61,8 +62,10 @@ function SoloTripCard({ view, campus, personas, data, actions }: {
           {toward && (
             <p className="mt-1 text-[15px] text-hero-muted">
               {toward.label}: <b className="font-bold text-hero-fg">{toward.where}</b>
+              {arrived(trip) && (stage === "at_pickup" || stage === "at_destination") && <span className="ml-2 rounded-full bg-hero-track px-2 py-0.5 text-[13px] font-semibold text-hero-fg" data-testid="arrival-confirmed">Arrival confirmed</span>}
             </p>
           )}
+          {request && <DriverEta requestId={request.id} revision={data.revision} active={trip.status === "active"} />}
         </div>
         <HeroSteps stage={stage} />
       </HeroPanel>
@@ -83,7 +86,7 @@ function SoloTripCard({ view, campus, personas, data, actions }: {
           {request && (
             <>
               <dt className="text-muted">Fare</dt>
-              <dd>{formatJod(request.fareJod)} <span className="text-[13px] text-muted">(simulated, no payment)</span></dd>
+              <dd>{request.freeLoyaltyRide ? "Free loyalty ride" : formatJod(request.fareJod)} <span className="text-[13px] text-muted">(simulated, no payment)</span></dd>
               <dt className="text-muted">Requested</dt>
               <dd>{request.id} · {formatSimTime(request.createdAt)}</dd>
             </>
@@ -114,7 +117,7 @@ function SoloTripCard({ view, campus, personas, data, actions }: {
             onClick={() => void actions.submit(next)}
             data-testid="trip-action"
           >
-            {pending ? "Sending…" : ACTION_LABEL[next.action]}
+            {pending ? "Sending…" : next.action === "arrive" ? (stage === "at_destination" ? "Arrived at destination" : "Arrived at pickup") : ACTION_LABEL[next.action]}
           </PrimaryButton>
         ) : (
           <p className="rounded-tile bg-surface px-3 py-2.5 text-center text-sm text-ink-2" data-testid="trip-unavailable">{unavailable}</p>

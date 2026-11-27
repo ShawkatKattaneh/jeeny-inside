@@ -61,7 +61,7 @@ export function createDriverActionController(deps: {
       inFlight = true;
       set({ status: "pending", binding });
       try {
-        const res = await deps.api.rideAction(binding.requestId, binding.action);
+        const res = await deps.api.rideAction(binding.requestId, binding.action, binding.tripId);
         if (!res.ok) {
           set({ status: "error", binding, code: res.code, message: res.message });
           return "failed";
@@ -69,7 +69,7 @@ export function createDriverActionController(deps: {
         set({ status: "success", binding, message: ACTION_DONE[binding.action] });
         // The response is never written into the live state. If the update has not arrived, resync.
         const live = deps.currentData()?.requests.find((r) => r.id === binding.requestId);
-        if (!live || live.status === binding.expectedStatus) deps.resync();
+        if (binding.action !== "arrive" && (!live || live.status === binding.expectedStatus)) deps.resync();
         return "sent";
       } catch {
         set({ status: "error", binding, code: "CLIENT_ERROR", message: "Something went wrong while sending. Check the ride status before trying again." });

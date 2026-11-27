@@ -102,7 +102,8 @@ describe("home screen", () => {
     expect(t).toContain("0.25 JOD");
     expect(t).toContain("Approved demo rate");
     expect(t).toContain("after 5 completed paid rides, the next one is free");
-    expect(t).toContain("Loyalty tracking is not active in this prototype yet, so no free ride is counted or awarded.");
+    // Loyalty is now granted by the server (final pass); a new student sees 0 of 5 and no earned claim.
+    expect(t).toContain("0 of 5 completed paid rides towards a free ride.");
     expect(t).not.toMatch(/you('ve| have) earned|free ride (unlocked|earned)|rides? (left|to go)/i);
   });
 

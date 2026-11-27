@@ -12,7 +12,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { FastifyInstance } from "fastify";
 import type { Persona, StateSnapshot } from "../../shared/schemas";
 import { PERSONAS } from "../../shared/personas";
-import { board, createRequest, startTrip, type RideState } from "../../engine/rides";
+import { board, confirmArrival, createRequest, startTrip, type RideState } from "../../engine/rides";
 import { dispatchRequest } from "../../engine/dispatch";
 import { advance } from "../../engine/simulation";
 import { CampusContext } from "./lib/campusContext";
@@ -141,6 +141,10 @@ describe("Driver screen", () => {
     const { rec, run, A, B } = sharedTrip();
     run((s) => startTrip(s, A));
     run((s) => advance(s, 10)); // at b
+    // Final pass: before the driver confirms arrival, arriving is the only step offered.
+    const before = render("/driver", <DriverHome store={liveStore(rec.snapshot())} api={neverDriver} personas={PERSONAS} />);
+    expect([...before.matchAll(/data-testid="trip-action"[^>]*>([^<]*)</g)].map((m) => m[1])).toEqual(["Arrived at b"]);
+    run((s) => confirmArrival(s, "TRIP-0001"));
     const html = render("/driver", <DriverHome store={liveStore(rec.snapshot())} api={neverDriver} personas={PERSONAS} />);
     const t = text(html);
     expect(html).toContain('data-testid="shared-trip"');

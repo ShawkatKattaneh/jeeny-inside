@@ -9,6 +9,7 @@ import { isSharedTrip } from "../lib/driverWork";
 import type { DispatchResult, DispatchSelection, JoinCandidate } from "../lib/rideApi";
 import { actionTone, BusyLabel } from "../ui/Button";
 import { Card } from "../ui/Card";
+import { AutoMovement } from "./AutoMovement";
 import { formatSimTime, locationName } from "../student/format";
 import { cartWhere, driverText, simClock, studentText } from "./opsFormat";
 import { opsTapInText } from "../lib/tapIn";
@@ -88,8 +89,10 @@ export function SimulationPanel({ data, advance }: { data: StateSnapshot; advanc
       <div className="rounded-tile bg-surface px-3 py-2">
         <div className="text-[13px] text-muted">Simulation clock (from the live state)</div>
         <div className="text-2xl font-extrabold tabular-nums" data-testid="sim-clock">{simClock(data.clockSeconds)}</div>
-        <div className="text-[13px] text-muted">{moving} moving trip{moving === 1 ? "" : "s"}. Carts move only when you advance.</div>
+        <div className="text-[13px] text-muted">{moving} moving trip{moving === 1 ? "" : "s"}. Carts move with simulated movement, or one step at a time below.</div>
       </div>
+      <AutoMovement revision={data.revision} />
+      <p className="-mb-1 text-[13px] font-semibold text-ink-2">Or advance by hand</p>
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Preset durations">
         {PRESETS.map((p) => (
           <button key={p} type="button" disabled={pending} aria-pressed={Number(value) === p} onClick={() => setValue(String(p))}

@@ -103,7 +103,7 @@ export function ModeSwitcher({ current }: { current: Role | null }) {
       >
         {active ? <active.icon /> : <StudentIcon />}
         <span>{active ? active.label : "Demo view"}</span>
-        <span className="sr-only">: switch demo view</span>
+        <span className="sr-only">: switch role</span>
         <span className="text-muted"><ChevronDownIcon /></span>
       </button>
 
@@ -114,12 +114,12 @@ export function ModeSwitcher({ current }: { current: Role | null }) {
             ref={panel}
             id={menuId}
             role="dialog"
-            aria-label="Switch demo view"
+            aria-label="Switch role"
             aria-modal={sheet ? true : undefined}
             className="anim-sheet-in fixed inset-x-0 bottom-0 z-50 mx-auto max-h-[90dvh] max-w-[430px] overflow-y-auto rounded-t-sheet bg-card px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-sheet sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-12 sm:mx-0 sm:w-72 sm:max-w-none sm:rounded-card sm:p-2 sm:shadow-pop sm:ring-1 sm:ring-line"
           >
             <div className="mx-auto mb-2 h-1 w-9 rounded-full bg-line sm:hidden" aria-hidden="true" />
-            <p className="px-2 pb-1 text-[13px] font-semibold text-muted">Switch demo view</p>
+            <p className="px-2 pb-1 text-[13px] font-semibold text-muted">Switch role</p>
             <ul className="flex flex-col">
               {MODES.map((m) => {
                 const p = rememberedPersona(m.role);
@@ -136,7 +136,7 @@ export function ModeSwitcher({ current }: { current: Role | null }) {
                       <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${selected ? "bg-card text-brand-strong" : "bg-surface text-ink"}`}><m.icon /></span>
                       <span className="min-w-0 flex-1">
                         <span className={`block text-[15px] ${selected ? "font-bold" : "font-semibold"}`}>{m.label}</span>
-                        <span className="block truncate text-[13px] text-muted">{p ? `Demo persona: ${p.name}` : "Choose a demo persona"}</span>
+                        <span className="block truncate text-[13px] text-muted">{p ? p.name : "Choose who you are"}</span>
                       </span>
                       {selected && <span className="text-brand-strong"><CheckIcon /></span>}
                     </button>
@@ -146,10 +146,10 @@ export function ModeSwitcher({ current }: { current: Role | null }) {
             </ul>
             {current && (
               <button type="button" data-mode-item onClick={changePersona} className="mt-1 flex min-h-11 w-full items-center rounded-tile px-2 text-left text-[14px] font-semibold text-ink-2 hover:bg-surface">
-                Choose another demo persona
+                Choose another person
               </button>
             )}
-            <p className="px-2 pt-1 text-[13px] text-muted">Demo personas only: no sign-in, no permissions.</p>
+            <p className="px-2 pt-1 text-[13px] text-muted">No sign-in in this build: roles are for demonstration.</p>
             <div className="mt-2 border-t border-line px-1 pb-1 pt-3">
               <ThemeSelector compact />
             </div>

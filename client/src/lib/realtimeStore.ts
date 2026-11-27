@@ -94,6 +94,9 @@ const defaultFetchSnapshot = async (): Promise<unknown> => {
   return res.json();
 };
 
+/** Pause before reconnecting after the server closed the connection itself. */
+export const SERVER_DISCONNECT_RETRY_MS = 1000;
+
 export function createRealtimeStore({ socket, fetchSnapshot = defaultFetchSnapshot, ackTimeoutMs = 3000 }: RealtimeStoreOptions): RealtimeStore {
   let state: RealtimeState = { status: "connecting", data: null, snapshotSeq: 0 };
   const listeners = new Set<() => void>();
@@ -162,8 +165,20 @@ export function createRealtimeStore({ socket, fetchSnapshot = defaultFetchSnapsh
     set({ status: "connecting" });
   };
 
-  const onDisconnect = () => {
+  /**
+   * When the server closes the connection itself (for example on a clean restart), socket.io-client does
+   * not reconnect on its own ("io server disconnect"). Ask it to, once, after a short pause; from then on its
+   * normal retry with backoff takes over until the server is back. A disconnect by this store never does.
+   */
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  const onDisconnect = (reason?: unknown) => {
     set({ status: "offline" });
+    if (reason === "io server disconnect" && started && reconnectTimer === null) {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        if (started && !socket.connected) socket.connect();
+      }, SERVER_DISCONNECT_RETRY_MS);
+    }
   };
 
   const handlers: [string, Listener][] = [
@@ -193,6 +208,7 @@ export function createRealtimeStore({ socket, fetchSnapshot = defaultFetchSnapsh
       started = false;
       generation += 1;
       resyncing = false;
+      if (reconnectTimer !== null) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       for (const [event, fn] of handlers) socket.off(event, fn);
       socket.disconnect();
       set({ status: "offline" });

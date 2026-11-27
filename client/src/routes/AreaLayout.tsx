@@ -6,6 +6,8 @@ import { BrandLockup } from "../ui/Brand";
 import { ModeSwitcher } from "../ui/ModeSwitcher";
 import { rememberPath, rememberPersona } from "./modeMemory";
 
+const ROLE_NAME: Record<Role, string> = { student: "Student", driver: "Driver", operator: "Operations" };
+
 /** Width of the Student and Driver phone column. On wider screens it is centred on the canvas. */
 export const PHONE_COLUMN = "max-w-[430px]";
 
@@ -38,9 +40,9 @@ export function AreaLayout({ role, children }: { role: Role; wide?: boolean; chi
         <span className="shrink-0"><BrandLockup size={28} compact /></span>
         <span className="ml-auto min-w-0 flex-1 text-right leading-tight">
           <span className="block truncate text-[14px] font-bold text-ink">{persona.name}</span>
-          {/* Phones: "Demo persona" only, so it never truncates; Operations adds the subtitle where there is room. */}
+          {/* The role, so it never truncates; Operations adds the subtitle where there is room. */}
           <span className="block truncate text-[13px] text-muted" title={persona.subtitle}>
-            Demo persona{phone ? null : <span className="hidden md:inline"> · {persona.subtitle}</span>}
+            {ROLE_NAME[role]}{phone ? null : <span className="hidden md:inline"> · {persona.subtitle}</span>}
           </span>
         </span>
       </div>

@@ -2,16 +2,17 @@ import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import fastifyStatic from "@fastify/static";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { AdvanceSimulationBody, CreateRideRequestBody, EmptyActionBody, TapInBody, type CampusConfig, type StateOperation, type Trip } from "../shared/schemas.js";
+import { AdvanceSimulationBody, AutoAdvanceBody, CreateRideRequestBody, MissionRunBody, EmptyActionBody, TapInBody, type CampusConfig, type StateOperation, type Trip } from "../shared/schemas.js";
 import { PERSONAS } from "../shared/personas.js";
 import { SETTINGS, INDEPENDENCE_NOTE } from "../shared/settings.js";
 import type { Fleet } from "../engine/fleet.js";
 import { listCarts, getCart } from "../engine/fleet.js";
-import { board, cancel, createRequest, dropOff, fail, getRequest, startTrip, tripForRequest, type RideError, type RideResult, type RideState } from "../engine/rides.js";
+import { board, cancel, confirmArrival, createRequest, dropOff, fail, getRequest, legMetersLeft, rideEta, routeDrivingSeconds, startTrip, tripForRequest, type RideError, type RideResult, type RideState } from "../engine/rides.js";
 import { dispatchRequest, type DispatchError } from "../engine/dispatch.js";
 import { tapIn } from "../engine/tapIn.js";
 import { advance } from "../engine/simulation.js";
 import { computeAnalytics } from "../engine/analytics.js";
+import { runMission } from "../engine/mission.js";
 import { AnalyticsQuery } from "../shared/analytics.js";
 import { createAppStore, type AppStore } from "./state.js";
 import { attachRealtime, snapshotOf } from "./realtime.js";
@@ -220,6 +221,92 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
       return { ...r, clockSeconds: r.state.clockSeconds, carts: listCarts(r.state.fleet), trips: moving.map((id) => r.state.trips.get(id)!) };
     }, "simulation.advanced");
     return sendResult(reply, result, (r) => ({ clockSeconds: r.clockSeconds, carts: r.carts, trips: r.trips }));
+  });
+
+  // ---------- Driver arrival (explicit confirmation) ----------
+
+  /**
+   * The driver confirms arriving at the trip's current stop (engine confirmArrival). 409 when the cart is
+   * not stopped there yet or arrival was already confirmed; 404 for an unknown trip. Records the time on
+   * the stop only: boarding and drop-off remain separate driver actions.
+   */
+  app.post<{ Params: { tripId: string } }>("/api/trips/:tripId/arrive", async (req, reply) => {
+    const body = EmptyActionBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send(validationErrorBody(body.error, "arrival call (it takes no fields)"));
+    const id = req.params.tripId;
+    const result = store.apply((s) => {
+      const r = confirmArrival(s, id);
+      return r.ok ? { ...r, cart: r.state.fleet.carts.get(r.trip.cartId)! } : r;
+    }, "trip.arrived");
+    return sendResult(reply, result, (r) => ({ trip: r.trip, cart: r.cart }));
+  });
+
+  // ---------- ETA (read-only) ----------
+
+  /** The engine's ETA for a ride with a cart, plus how much of the current leg is driven. Never writes. */
+  app.get<RideParams>("/api/ride-requests/:requestId/eta", async (req, reply) => {
+    const id = req.params.requestId;
+    const out = store.read((s, revision) => {
+      const eta = rideEta(s, id);
+      if (!eta.ok) return eta;
+      const trip = tripForRequest(s, id);
+      const cart = trip ? s.fleet.carts.get(trip.cartId) : undefined;
+      let legProgress: number | null = null;
+      if (trip?.leg && cart && trip.status === "active") {
+        const total = routeDrivingSeconds(s.graph, trip.leg, cart.maxSpeedKmh);
+        const left = legMetersLeft(s.graph, cart, trip.leg);
+        if (total.ok && left.ok && total.meters > 0) legProgress = Math.min(1, Math.max(0, 1 - left.meters / total.meters));
+      }
+      return { ok: true as const, body: { requestId: id, revision, pickupSeconds: eta.pickupSeconds, destinationSeconds: eta.destinationSeconds, legProgress } };
+    });
+    if (!out.ok) {
+      const { status, body } = rideErrorResponse(out.error);
+      return reply.code(status).send(body);
+    }
+    return out.body;
+  });
+
+  // ---------- Mission Mode (read-only scenario comparison) ----------
+
+  /**
+   * Run Mission Mode (engine/mission.ts) on a private copy of the campus and the current fleet: pooling on
+   * against pooling off on the same seeded demand. Never writes, never creates a revision.
+   */
+  app.post("/api/mission/run", async (req, reply) => {
+    const body = MissionRunBody.safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send(validationErrorBody(body.error, "Mission Mode options"));
+    const { campus, carts } = store.read((s) => ({ campus: s.campus, carts: listCarts(s.fleet) }));
+    return runMission(campus, carts, body.data);
+  });
+
+  // ---------- Simulated movement (server-driven) ----------
+
+  const TICK_MS = 1000;
+  const auto = { running: false, speed: 1 as number, timer: null as ReturnType<typeof setInterval> | null };
+  const tick = () => {
+    try {
+      const driving = store.read((s) => [...s.trips.values()].some((t) => t.status === "active" || t.status === "cancelling"));
+      if (!driving) return; // nothing to move: no step, no revision
+      store.apply((s) => advance(s, auto.speed), "simulation.advanced");
+    } catch (err) {
+      app.log.error({ err }, "simulated movement stopped after a failed step");
+      setAuto(false);
+    }
+  };
+  function setAuto(running: boolean, speed?: number) {
+    if (speed !== undefined) auto.speed = speed;
+    auto.running = running;
+    if (running && !auto.timer) auto.timer = setInterval(tick, TICK_MS);
+    if (!running && auto.timer) { clearInterval(auto.timer); auto.timer = null; }
+  }
+  app.addHook("onClose", async () => setAuto(false));
+  const autoStatus = () => ({ running: auto.running, speed: auto.speed, tickMs: TICK_MS });
+  app.get("/api/simulation/auto", async () => autoStatus());
+  app.post("/api/simulation/auto", async (req, reply) => {
+    const body = AutoAdvanceBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send(validationErrorBody(body.error, "simulated movement setting"));
+    setAuto(body.data.running, body.data.speed);
+    return autoStatus();
   });
 
   if (clientDir && existsSync(resolve(clientDir, "index.html"))) {

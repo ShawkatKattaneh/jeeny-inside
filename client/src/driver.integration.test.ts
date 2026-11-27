@@ -72,15 +72,25 @@ describe("Driver Mode against the real server", () => {
     expect(step().stage).toBe("to_pickup");
     await post(live, "/api/simulation/advance", { seconds: 600 });
     await atRevision(store, 4);
+    // Final pass: the driver confirms arrival explicitly, then boards; the same at the destination.
+    expect(step().next).toMatchObject({ action: "arrive", tripId: "TRIP-0001" });
     expect(await actions.submit(step().next!)).toBe("sent");
     await atRevision(store, 5);
-    await post(live, "/api/simulation/advance", { seconds: 600 });
-    await atRevision(store, 6);
+    expect(step().next).toMatchObject({ action: "board", requestId: id });
     expect(await actions.submit(step().next!)).toBe("sent");
+    await atRevision(store, 6);
+    await post(live, "/api/simulation/advance", { seconds: 600 });
     await atRevision(store, 7);
+    expect(step().next).toMatchObject({ action: "arrive", tripId: "TRIP-0001" });
+    expect(await actions.submit(step().next!)).toBe("sent");
+    await atRevision(store, 8);
+    expect(await actions.submit(step().next!)).toBe("sent");
+    await atRevision(store, 9);
     expect(urls).toEqual([
       `${live.url}/api/ride-requests/${id}/start`,
+      `${live.url}/api/trips/TRIP-0001/arrive`,
       `${live.url}/api/ride-requests/${id}/board`,
+      `${live.url}/api/trips/TRIP-0001/arrive`,
       `${live.url}/api/ride-requests/${id}/drop-off`,
     ]);
     expect(openTripsForCart(store.getState().data!, "CART-01")).toEqual([]);
@@ -196,7 +206,8 @@ describe("Driver Mode against the real server", () => {
     await post(live, "/api/simulation/advance", { seconds: 600 }); // missed while offline
     raw.connect();
     await atRevision(store, 4);
-    expect(openTripsForCart(store.getState().data!, "CART-01")[0]).toMatchObject({ stage: "at_pickup", next: { action: "board" } });
+    // Recovered from the snapshot: at the pickup, the next step is the driver's explicit arrival (final pass).
+    expect(openTripsForCart(store.getState().data!, "CART-01")[0]).toMatchObject({ stage: "at_pickup", next: { action: "arrive" } });
   });
 
   it("each driver sees only their own cart's trip", async () => {

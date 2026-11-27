@@ -64,9 +64,14 @@ const CancelResponse = z.object({ request: RideRequest });
 /** Body of a successful start / board / drop-off call: the request, its trip and that trip's cart after the operation. */
 const LifecycleResponse = z.object({ request: RideRequest, trip: Trip, cart: Cart });
 export type LifecycleResult = z.infer<typeof LifecycleResponse>;
+const ArriveResponse = z.object({ trip: Trip, cart: Cart });
+export type ArriveResult = z.infer<typeof ArriveResponse>;
 
-/** The driver-side ride operations that exist on the server (Phase 2): POST /api/ride-requests/:id/<action>. */
-export type LifecycleAction = "start" | "board" | "drop-off";
+/**
+ * The driver-side operations that exist on the server: POST /api/ride-requests/:id/{start,board,drop-off},
+ * and "arrive", the driver's explicit arrival at the trip's current stop (POST /api/trips/:tripId/arrive).
+ */
+export type LifecycleAction = "start" | "board" | "drop-off" | "arrive";
 
 export interface RideApi {
   /** POST /api/ride-requests: create a ride request; answers 201 with the new request. */
@@ -91,7 +96,8 @@ export interface OpsApi {
 /** Driver Mode's calls (Phase 3 Prompt 2). Separate from RideApi so the Student App's API is unchanged. */
 export interface DriverApi {
   /** POST /api/ride-requests/:id/{start,board,drop-off}: one lifecycle step for one request; takes no body fields. */
-  rideAction(requestId: string, action: LifecycleAction): Promise<ApiResult<LifecycleResult>>;
+  /** `tripId` is used by "arrive" (a trip-level step); the other steps go through the request. */
+  rideAction(requestId: string, action: LifecycleAction, tripId?: string): Promise<ApiResult<LifecycleResult | ArriveResult>>;
 }
 
 const UNREACHABLE = "Couldn't reach the Jeeny INSIDE server. Check that this device is on the same network as the server and try again.";
@@ -133,8 +139,10 @@ export function createRideApi(baseUrl = "", fetchImpl: typeof fetch = (...args) 
 
 export function createDriverApi(baseUrl = "", fetchImpl: typeof fetch = (...args) => fetch(...args)): DriverApi {
   return {
-    rideAction: (requestId, action) =>
-      call(fetchImpl, `${baseUrl}/api/ride-requests/${encodeURIComponent(requestId)}/${action}`, {}, (v) => LifecycleResponse.parse(v)),
+    rideAction: (requestId, action, tripId) =>
+      action === "arrive"
+        ? call(fetchImpl, `${baseUrl}/api/trips/${encodeURIComponent(tripId ?? "")}/arrive`, {}, (v) => ArriveResponse.parse(v))
+        : call(fetchImpl, `${baseUrl}/api/ride-requests/${encodeURIComponent(requestId)}/${action}`, {}, (v) => LifecycleResponse.parse(v)),
   };
 }
 

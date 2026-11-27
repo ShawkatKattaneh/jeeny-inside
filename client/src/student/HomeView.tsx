@@ -1,11 +1,12 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { BookingPanel, type Selection } from "./BookingPanel";
 import { PricingExplainer } from "./FareInfo";
 import { RideListItem } from "./RideListItem";
+import { RideResultCard, useJustFinished } from "./RideResult";
 import { liveStatusText } from "./LiveStatus";
 import { RideStatusCard } from "./RideStatusCard";
-import { CART_NOTE, MAP_NOTE, StudentMap } from "./StudentMap";
+import { MAP_NOTE, StudentMap } from "./StudentMap";
 import { StillConnectingNote, useStudent } from "./studentContext";
 
 /**
@@ -15,7 +16,17 @@ import { StillConnectingNote, useStudent } from "./studentContext";
  */
 export function HomeView() {
   const { persona, campus, realtime, rides, activeRide } = useStudent();
-  const [selection, setSelection] = useState<Selection>({ pickupId: "", destinationId: "" });
+  // Campus Map's "Set as pickup / destination" opens Home with that stop filled in (router state only).
+  const preset = (useLocation().state ?? {}) as Partial<Selection>;
+  const navigate = useNavigate();
+  const [selection, setSelection] = useState<Selection>({ pickupId: preset.pickupId ?? "", destinationId: preset.destinationId ?? "" });
+  useEffect(() => {
+    if (preset.pickupId || preset.destinationId) {
+      setSelection((s) => ({ pickupId: preset.pickupId ?? s.pickupId, destinationId: preset.destinationId ?? s.destinationId }));
+      navigate(".", { replace: true, state: null });
+    }
+  }, [preset.pickupId, preset.destinationId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const result = useJustFinished(rides);
   const recent = rides.filter((r) => !r.active).slice(0, 3);
   const loading = realtime.data === null;
   const noteId = useId();
@@ -32,6 +43,14 @@ export function HomeView() {
     const focusLost = !document.activeElement || document.activeElement === document.body;
     if (focusLost) document.getElementById(`ride-${rideId}`)?.focus();
   }, [loading, rideId]);
+
+  // When the followed ride ends, its card is replaced by the result card: keep focus on the new heading.
+  const resultId = result.ride?.request.id ?? null;
+  useEffect(() => {
+    if (!resultId) return;
+    const focusLost = !document.activeElement || document.activeElement === document.body;
+    if (focusLost) document.getElementById(`result-${resultId}`)?.focus();
+  }, [resultId]);
 
   return (
     <div className="flex h-[calc(100dvh-4rem-1px-env(safe-area-inset-top)-3.5rem-env(safe-area-inset-bottom))] min-h-[32rem] flex-col">
@@ -51,7 +70,6 @@ export function HomeView() {
             )}
             <p id={noteId} className="mt-1 text-[13px] text-muted">
               {MAP_NOTE}
-              {activeRide?.cart && <> {CART_NOTE}</>}
             </p>
           </div>
 
@@ -67,6 +85,8 @@ export function HomeView() {
               </div>
             ) : activeRide ? (
               <RideStatusCard ride={activeRide} />
+            ) : result.ride ? (
+              <RideResultCard ride={result.ride} onDismiss={result.dismiss} />
             ) : (
               <BookingPanel selection={selection} onChange={setSelection} />
             )}

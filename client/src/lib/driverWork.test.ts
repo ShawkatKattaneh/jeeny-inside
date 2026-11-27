@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import type { Persona, StateSnapshot } from "../../../shared/schemas";
 import { PERSONAS } from "../../../shared/personas";
-import { board, cancel, createRequest, dropOff, startTrip, type RideState } from "../../../engine/rides";
+import { board, confirmArrival, cancel, createRequest, dropOff, startTrip, type RideState } from "../../../engine/rides";
 import { dispatchRequest } from "../../../engine/dispatch";
 import { advance } from "../../../engine/simulation";
 import { bindingStillValid, driverCartLink, openTripsForCart, shownTrip, tripView, type CartTrip } from "./driverWork";
@@ -103,15 +103,22 @@ describe("next step follows the server's own preconditions", () => {
     expect(look().unavailable).toMatch(/Boarding opens when the cart reaches the pickup/);
     run((s) => advance(s, 600));
     look();
+    // Final pass: the driver confirms arrival explicitly before boarding and before drop-off.
+    run((s) => confirmArrival(s, "TRIP-0001"));
+    look();
     run((s) => board(s, id));
     look();
     run((s) => advance(s, 600));
     look();
+    run((s) => confirmArrival(s, "TRIP-0001"));
+    look();
     expect(seen).toEqual([
       ["planned", "start", "assigned", "assigned"],
       ["to_pickup", null, "arriving", "assigned"],
+      ["at_pickup", "arrive", "arriving", "assigned"],
       ["at_pickup", "board", "arriving", "assigned"],
       ["to_destination", null, "on_board", "occupied"],
+      ["at_destination", "arrive", "on_board", "occupied"],
       ["at_destination", "drop-off", "on_board", "occupied"],
     ]);
   });

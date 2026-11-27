@@ -147,9 +147,14 @@ function sharedTripView(data: StateSnapshot, trip: Trip): CartTrip {
   }
   if (trip.status !== "active" || !nextStop) return done("unknown", `No driver step for a ${trip.status} trip.`);
   if (!shared.atNextStop) {
-    return done("to_stop", "Boarding and drop-off open when the cart reaches the next stop. The cart moves only when the simulation advances.");
+    return done("to_stop", "Boarding and drop-off open when the cart reaches the next stop. Then confirm your arrival.");
   }
   const flags = new Map(trip.passengers.map((p) => [p.requestId, p]));
+  // Stopped at the stop: the driver first confirms arrival (a trip-level step, sent through a rider of this stop).
+  if (trip.stops[trip.stopIndex]?.arrivedAtMs === undefined) {
+    const via = [...nextStop.alight, ...nextStop.board].map((id) => req(id)).find((r) => r && (r.status === "arriving" || r.status === "on_board"));
+    if (via) { const a = bind("arrive", via); return { ...base, stage: "at_stop", next: a, actions: [a], unavailable: null }; }
+  }
   const actions: ActionBinding[] = [];
   // Drop-offs first: they free seats for riders boarding at the same stop.
   for (const id of nextStop.alight) {
@@ -167,6 +172,8 @@ function sharedTripView(data: StateSnapshot, trip: Trip): CartTrip {
 }
 
 const OPEN: readonly TripStatus[] = ["planned", "active", "cancelling"];
+/** Has the driver confirmed arriving at the trip's current stop? (Recorded by the server on the stop.) */
+export const arrived = (trip: Trip) => trip.stops[trip.stopIndex]?.arrivedAtMs !== undefined;
 const at = (cart: Cart | undefined, locationId: string | undefined) => !!locationId && cart?.position.kind === "at" && cart.position.locationId === locationId;
 
 /** Mirrors the server's preconditions for start / board / drop-off, so the UI only offers what it would accept. */
@@ -192,13 +199,13 @@ function soloTripView(data: StateSnapshot, trip: Trip): Omit<CartTrip, "actions"
   if (trip.status === "planned" && request.status === "assigned") return { ...base, stage: "planned", next: bind("start"), unavailable: null };
   if (trip.status === "active" && request.status === "arriving") {
     return at(cart, request.pickupId)
-      ? { ...base, stage: "at_pickup", next: bind("board"), unavailable: null }
-      : { ...base, stage: "to_pickup", next: null, unavailable: "Boarding opens when the cart reaches the pickup. The cart moves only when the simulation advances." };
+      ? { ...base, stage: "at_pickup", next: bind(arrived(trip) ? "board" : "arrive"), unavailable: null }
+      : { ...base, stage: "to_pickup", next: null, unavailable: "Boarding opens when the cart reaches the pickup. Then confirm your arrival." };
   }
   if (trip.status === "active" && request.status === "on_board") {
     return at(cart, request.destinationId)
-      ? { ...base, stage: "at_destination", next: bind("drop-off"), unavailable: null }
-      : { ...base, stage: "to_destination", next: null, unavailable: "Drop-off opens when the cart reaches the destination. The cart moves only when the simulation advances." };
+      ? { ...base, stage: "at_destination", next: bind(arrived(trip) ? "drop-off" : "arrive"), unavailable: null }
+      : { ...base, stage: "to_destination", next: null, unavailable: "Drop-off opens when the cart reaches the destination. Then confirm your arrival." };
   }
   return { ...base, stage: "unknown", next: null, unavailable: `No driver step for a ${trip.status} trip with a ${request.status} ride.` };
 }
@@ -245,12 +252,14 @@ export const ACTION_LABEL: Record<LifecycleAction, string> = {
   start: "Start trip",
   board: "Confirm boarding",
   "drop-off": "Confirm drop-off",
+  arrive: "Confirm arrival",
 };
 
 export const ACTION_DONE: Record<LifecycleAction, string> = {
   start: "Trip started.",
   board: "Boarding confirmed.",
   "drop-off": "Drop-off confirmed. Ride completed.",
+  arrive: "Arrival confirmed.",
 };
 
 export const CART_STATUS_LABEL: Record<Cart["status"], string> = {

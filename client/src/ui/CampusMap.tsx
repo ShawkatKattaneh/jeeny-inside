@@ -1,3 +1,4 @@
+import type React from "react";
 import type { CampusConfig, Location, Point } from "../../../shared/schemas";
 import { labelSize, oneWayArrow, pathSegments } from "../lib/mapGeometry";
 
@@ -95,30 +96,31 @@ export function CampusMap({ campus, className = "", overlay, flush = false }: { 
       {pickup && <StopRing point={pickup} fs={fs} color="var(--color-brand)" label="Pickup" side="left" />}
       {destination && <StopRing point={destination} fs={fs} color="var(--color-dropoff)" label="Drop-off" />}
       {fanned.map(({ c, x, y }) => (
-        <g key={`cart-${c.id}`}>
+        <g key={`cart-${c.id}`} style={glide(x, y)} data-cart-marker={c.id}>
           <title>{`${c.label} (simulated position)`}</title>
-          {c.highlight && <circle cx={x} cy={y} r={fs * 1.45} fill="none" stroke="var(--color-brand)" strokeWidth={fs * 0.25} />}
-          <circle cx={x} cy={y} r={fs * 0.95} fill="var(--color-marker)" stroke="var(--color-map-bg)" strokeWidth={fs * 0.25} />
-          <text x={x} y={y + fs * 0.32} textAnchor="middle" fontSize={fs * 0.8} fontWeight={800} fill="var(--color-marker-fg)">
+          {c.highlight && <circle r={fs * 1.45} fill="none" stroke="var(--color-brand)" strokeWidth={fs * 0.25} />}
+          <circle r={fs * 0.95} fill="var(--color-marker)" stroke="var(--color-map-bg)" strokeWidth={fs * 0.25} />
+          <text y={fs * 0.32} textAnchor="middle" fontSize={fs * 0.8} fontWeight={800} fill="var(--color-marker-fg)">
             {c.label.replace(/\D+/g, "").slice(-2) || "C"}
           </text>
         </g>
       ))}
       {overlay?.cart && (
-        <g>
+        <g style={glide(overlay.cart.point.x, overlay.cart.point.y)} data-cart-marker={overlay.cart.label}>
           <title>{`${overlay.cart.label} (simulated position)`}</title>
-          <circle cx={overlay.cart.point.x} cy={overlay.cart.point.y} r={fs * 0.95} fill="var(--color-marker)" stroke="var(--color-map-bg)" strokeWidth={fs * 0.25} />
-          <path
-            d={`M${overlay.cart.point.x - fs * 0.45} ${overlay.cart.point.y + fs * 0.15} h${fs * 0.9} M${overlay.cart.point.x - fs * 0.3} ${overlay.cart.point.y - fs * 0.25} h${fs * 0.6}`}
-            stroke="var(--color-marker-fg)"
-            strokeWidth={fs * 0.18}
-            strokeLinecap="round"
-          />
+          <circle r={fs * 0.95} fill="var(--color-marker)" stroke="var(--color-map-bg)" strokeWidth={fs * 0.25} />
+          <path d={`M${-fs * 0.45} ${fs * 0.15} h${fs * 0.9} M${-fs * 0.3} ${-fs * 0.25} h${fs * 0.6}`} stroke="var(--color-marker-fg)" strokeWidth={fs * 0.18} strokeLinecap="round" />
         </g>
       )}
     </svg>
   );
 }
+
+/**
+ * Cart markers sit at the server's position; between two updates (one a second while movement runs) the
+ * marker glides in a straight line over the same second, so it does not jump. Removed with reduced motion.
+ */
+const glide = (x: number, y: number): React.CSSProperties => ({ transform: `translate(${x}px, ${y}px)`, transition: "transform 1s linear" });
 
 const near = (a: Point, b: Point) => Math.abs(a.x - b.x) < 1 && Math.abs(a.y - b.y) < 1;
 

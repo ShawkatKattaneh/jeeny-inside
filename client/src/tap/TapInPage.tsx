@@ -73,7 +73,7 @@ export function TapInPage({ store, api, tapApi, personas }: { store?: RealtimeSt
           {persona?.role === "student" && (
             <span className="ml-auto min-w-0 flex-1 text-right leading-tight">
               <span className="block truncate text-[14px] font-bold text-ink">{persona.name}</span>
-              <span className="block truncate text-[13px] text-muted">Demo persona</span>
+              <span className="block truncate text-[13px] text-muted">Student</span>
             </span>
           )}
         </div>

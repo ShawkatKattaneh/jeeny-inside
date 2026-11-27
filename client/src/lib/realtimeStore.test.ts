@@ -191,3 +191,52 @@ describe("realtime store: connection lifecycle", () => {
     expect(store.getState()).toBe(before);
   });
 });
+
+describe("reconnecting after the server closes the connection", () => {
+  it("a server-side disconnect (clean server restart) asks the socket to reconnect once, after a pause", () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeSocket();
+      const store = createRealtimeStore({ socket, fetchSnapshot: () => Promise.reject(new Error("unused")) });
+      store.start();
+      socket.serverConnect(recordingStore().snapshot());
+      const before = socket.connectCalls;
+      socket.connected = false;
+      socket.emit("disconnect", "io server disconnect");
+      expect(store.getState().status).toBe("offline");
+      vi.advanceTimersByTime(999);
+      expect(socket.connectCalls).toBe(before);
+      vi.advanceTimersByTime(1);
+      expect(socket.connectCalls).toBe(before + 1);
+      // A second server disconnect while the first retry is pending does not stack retries.
+      socket.emit("disconnect", "io server disconnect");
+      socket.emit("disconnect", "io server disconnect");
+      vi.advanceTimersByTime(1000);
+      expect(socket.connectCalls).toBe(before + 2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("an ordinary transport drop leaves reconnecting to socket.io, and stop() cancels a pending retry", () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeSocket();
+      const store = createRealtimeStore({ socket, fetchSnapshot: () => Promise.reject(new Error("unused")) });
+      store.start();
+      socket.serverConnect(recordingStore().snapshot());
+      const before = socket.connectCalls;
+      socket.serverDisconnect(); // "transport close": socket.io-client retries by itself
+      vi.advanceTimersByTime(5000);
+      expect(socket.connectCalls).toBe(before);
+      socket.serverConnect(recordingStore().snapshot());
+      socket.connected = false;
+      socket.emit("disconnect", "io server disconnect");
+      store.stop();
+      vi.advanceTimersByTime(5000);
+      expect(socket.connectCalls).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

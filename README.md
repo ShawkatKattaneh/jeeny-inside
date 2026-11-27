@@ -4,7 +4,17 @@ Campus mobility for university students on electric golf carts: a Student app, D
 
 > Jeeny INSIDE is an independent hackathon concept inspired by Jeeny. It is not an official Jeeny product and uses no Jeeny logos or assets. The campus, personas and ride history are sample data; the fleet, demand and fares will be simulated.
 
-**Status: Phase 0 (Foundation).** The baseline is the approved Foundation Plan (Revision 2). Changes to architecture or scope are proposed before they are built.
+**Status: complete hackathon build.** Student, Driver and Operations run on one server, one SQLite database and one live (Socket.IO) state. The baseline is the approved Foundation Plan (Revision 2).
+
+## Hackathon demo in five minutes
+
+1. `npm install`, then `npm start -- --db=data/demo.sqlite` (a fresh file gives a clean demo). Add `--public-host=<laptop address>` to show NFC/QR Tap-In URLs.
+2. Open `http://localhost:3000/demo`: the real Student, Driver and Operations apps side by side (each phone can also be opened on its own device).
+3. **Student:** choose a pickup and a destination, tap *Request a ride*.
+4. **Operations:** the request appears live; tap *Dispatch REQ-…* (the panel explains why that cart was chosen). Under *Simulation*, choose a speed and tap *Start movement*.
+5. **Driver:** the trip appears live. *Start trip*; the cart drives its route on all three phones. At the pickup tap *Arrived at pickup*, then *Confirm boarding*; at the destination *Arrived at destination*, then *Confirm drop-off*.
+6. **Student:** sees *Ride completed* with the fare (0.25 JOD, simulated) and loyalty progress. Operations shows the completed trip.
+7. Extras to show: Ghost Ride (two Shared requests from the same pickup), NFC Tap-In from *Quick*, Mission Mode and Flow Shield in Operations, Campus Copilot in *Quick*.
 
 ## Run it
 
@@ -65,6 +75,20 @@ Schema changes are versioned migrations in `server/migrations.ts` (see the comme
 - All times use the simulated clock (simulated seconds since the database was created). History is every record in this database.
 - Measured: demand by status and mode, pickup and destination activity (separately), request to Tap-In (arrival, not boarding), current elapsed wait, request to drop-off, carts by status, seat occupancy now, trips per cart, cancelled share of finished requests, and plain factual observations.
 - Not available, with the reason shown and never displayed as 0: calendar windows (today, 7 or 30 days: records have no wall-clock time), demand over time, request to boarding (boarding time is not saved), dispatch-eligible carts (eligibility depends on the request), utilization over time, and the step at which rides were cancelled.
+
+### Final build additions
+
+| Method | Path | Result |
+|---|---|---|
+| POST | `/api/trips/:tripId/arrive` | The driver confirms arriving at the trip's current stop. Only while the cart is stopped there; 409 `NOT_AT_STOP`, 409 `ALREADY_ARRIVED`, 404 `UNKNOWN_TRIP`. Records `arrivedAtMs` on the stop (saved, one revision, operation `trip.arrived`). It boards and drops off nobody: those stay separate driver actions, and the Driver app offers boarding and drop-off only after arrival is confirmed. |
+| GET | `/api/ride-requests/:id/eta` | The engine's ETA (pickup and destination seconds, simulated driving) and the share of the current leg driven. Read-only. |
+| GET/POST | `/api/simulation/auto` | Server-driven simulated movement: body `{ running, speed? }` with speed 1, 2, 5 or 10. While running, the server advances the clock once a second through the same engine `advance`, only while a trip is driving, and publishes each step as a normal revision. Not saved: a restarted server starts paused. Carts still stop at each stop for the driver. |
+| POST | `/api/mission/run` | Mission Mode: optional `{ seed, requests, sharedShare }`. Runs the same seeded demand twice on a private copy of the campus and fleet, pooling on (the live engine) and off (all solo), and returns what happened. Never writes. |
+
+- **Loyalty** is now applied by the server: after 5 completed paid rides, the next request is created free (`freeLoyaltyRide: true`, fare 0). Cancelled and free rides do not count; a cancelled free ride leaves the next request free.
+- **Positions** are simulated by the server, not GPS; every client draws the same server position. Battery values are the simulated fleet's.
+- **Campus Copilot** (Student → Quick) is rule-based: it answers from the campus file, the live ride state and the approved rules, offers only real actions, and uses no AI model.
+- **Battery Rescue** and **Campus Flow Shield** (Operations) are rule-based recommendations on the live state (the 15% reserve and simple, stated queue rules), not predictions; nothing is sent to a cart automatically.
 
 ### Starting fleet
 

@@ -62,6 +62,11 @@ export function StudentProvider({ persona, campus, api: injectedApi, children }:
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
+/** The Student data when inside the Student area, or null (for shared pieces such as the fare explainer). */
+export function useStudentOptional(): StudentData | null {
+  return useContext(Ctx);
+}
+
 export function useStudent(): StudentData {
   const v = useContext(Ctx);
   if (!v) throw new Error("useStudent must be used inside StudentProvider");

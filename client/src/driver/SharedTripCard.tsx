@@ -144,7 +144,7 @@ export function SharedTripCard({ view, shared, campus, personas, data, actions }
         {view.actions.length > 0 ? (
           view.actions.map((a) => (
             <PrimaryButton size="lg" key={`${a.action}-${a.requestId}`} type="button" disabled={pending} aria-busy={isPending(a)} onClick={() => void actions.submit(a)} data-testid="trip-action">
-              {isPending(a) ? "Sending…" : a.action === "start" ? ACTION_LABEL.start : `${ACTION_LABEL[a.action]}: ${riderName(a.requestId)}`}
+              {isPending(a) ? "Sending…" : a.action === "start" ? ACTION_LABEL.start : a.action === "arrive" ? `Arrived at ${next ? locationName(campus, next.locationId) : "stop"}` : `${ACTION_LABEL[a.action]}: ${riderName(a.requestId)}`}
             </PrimaryButton>
           ))
         ) : (

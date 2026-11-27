@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import type { Persona, Role } from "../../../shared/schemas";
 import { INDEPENDENCE_NOTE } from "../../../shared/settings";
 import { fetchPersonas } from "../lib/api";
@@ -49,9 +49,18 @@ export function PersonaPicker() {
           <div className="w-full max-w-[17rem]"><ThemeSelector /></div>
         </div>
         <div>
-          <h1 className="text-[28px] font-extrabold leading-tight tracking-tight">Choose a demo persona</h1>
-          <p className="mt-1 text-[15px] text-muted">No login for the prototype. Your choice is remembered on this device, and you can switch demo view at any time from the header.</p>
+          <h1 className="text-[28px] font-extrabold leading-tight tracking-tight">Choose your role</h1>
+          <p className="mt-1 text-[15px] text-muted">No sign-in needed: pick who you are. Your choice is remembered on this device, and you can switch role at any time from the header.</p>
         </div>
+
+        <Link to="/demo" className="flex items-center gap-3 rounded-card bg-hero px-4 py-3.5 text-hero-fg shadow-float ring-1 ring-hero-ring transition-opacity duration-150 hover:opacity-95" data-testid="open-demo">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand text-white" aria-hidden="true">3</span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[16px] font-bold">Live demo: all three roles side by side</span>
+            <span className="block text-[13px] text-hero-muted">Student, Driver and Operations on one screen, connected to the same server.</span>
+          </span>
+          <span aria-hidden="true">›</span>
+        </Link>
 
         {personas.status === "loading" && <p className="text-sm text-muted" role="status">Loading personas…</p>}
         {personas.status === "error" && <p className="rounded-tile bg-danger-tint px-3 py-2 text-sm text-ink" role="alert">Could not load personas: {personas.message}</p>}

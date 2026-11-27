@@ -16,6 +16,8 @@ import { DetailsPanel, DispatchPanel, FleetTable, MetricsPanel, RidesTables, Sim
 import { simClock } from "./opsFormat";
 import { TapPointsPanel } from "./TapPointsPanel";
 import { AnalyticsPanel } from "./AnalyticsPanel";
+import { BatteryPanel, FlowShieldPanel, GhostRidePanel } from "./MonitoringPanels";
+import { MissionPanel } from "./MissionPanel";
 import type { FetchAnalytics } from "../lib/analyticsApi";
 
 /** What the map highlights for the current selection: a ride's pickup, destination, current leg and cart. */
@@ -54,7 +56,6 @@ export function OpsDashboard({ api: injectedApi, personas: injectedPersonas, tap
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-[26px] font-extrabold leading-tight tracking-tight">Operations Center</h1>
-        <Badge emphasis="strong">Demo operator interface</Badge>
       </div>
       <div className="flex flex-wrap items-center gap-3 text-[13px] text-muted">
         {data && <span className="tabular-nums" data-testid="header-clock">Simulation time {simClock(data.clockSeconds)} · revision {data.revision}</span>}
@@ -103,12 +104,12 @@ export function OpsDashboard({ api: injectedApi, personas: injectedPersonas, tap
         <OpsSectionNav />
         <div className="flex min-w-0 flex-col gap-4">
           <MetricsPanel m={m} />
+          <FlowShieldPanel data={data} campus={campus} />
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:items-start">
             <div className="flex min-w-0 flex-col gap-4">
               <section id="ops-map" aria-label="Campus map" className="scroll-mt-24 flex flex-col gap-2 rounded-card bg-card p-3 ring-1 ring-line">
                 <CampusMap campus={campus} overlay={{ pickupId: focus.pickupId, destinationId: focus.destinationId, routePathIds: focus.pathIds, carts }} />
                 <p className="flex flex-wrap items-center gap-2 px-1 text-[13px] text-muted">
-                  {campus.fictional && <Badge emphasis="strong">Fictional campus</Badge>}
                   <span>Schematic map, not GPS. Carts are drawn at their simulated positions from the live state.</span>
                 </p>
                 <div className="flex flex-col gap-1 px-1" aria-label="Map legend" role="group" data-testid="ops-map-legend">
@@ -125,6 +126,11 @@ export function OpsDashboard({ api: injectedApi, personas: injectedPersonas, tap
             </section>
           </div>
           <RidesTables data={data} campus={campus} personas={personas} selected={selected} onSelect={setSelected} />
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 xl:items-start">
+            <GhostRidePanel data={data} campus={campus} personas={personas} onSelect={setSelected} />
+            <BatteryPanel data={data} onSelect={setSelected} />
+          </div>
+          <MissionPanel />
           <AnalyticsPanel revision={data.revision} fetchAnalytics={fetchAnalytics} />
           <TapPointsPanel campus={campus} baseUrl={tapBaseUrl} />
         </div>
@@ -133,13 +139,17 @@ export function OpsDashboard({ api: injectedApi, personas: injectedPersonas, tap
   );
 }
 
-/** The six sidebar destinations; each lists the section ids it covers (for the active state). */
+/** The sidebar destinations; each lists the section ids it covers (for the active state). */
 const SECTIONS = [
-  { label: "Live", href: "ops-overview", covers: ["ops-overview", "ops-map"] },
+  { label: "Live", href: "ops-overview", covers: ["ops-overview", "ops-flow"] },
+  { label: "Map", href: "ops-map", covers: ["ops-map"] },
   { label: "Dispatch", href: "ops-dispatch", covers: ["ops-dispatch", "ops-simulation"] },
   { label: "Fleet", href: "ops-fleet", covers: ["ops-fleet"] },
   { label: "Rides", href: "ops-requests", covers: ["ops-requests", "ops-trips"] },
-  { label: "Analytics", href: "ops-analytics", covers: ["ops-analytics"] },
+  { label: "Ghost Ride", href: "ops-ghost", covers: ["ops-ghost"] },
+  { label: "Battery Rescue", href: "ops-battery", covers: ["ops-battery"] },
+  { label: "Mission Mode", href: "ops-mission", covers: ["ops-mission"] },
+  { label: "Intelligence", href: "ops-analytics", covers: ["ops-analytics"] },
   { label: "Tap Points", href: "ops-tap-points", covers: ["ops-tap-points"] },
 ] as const;
 

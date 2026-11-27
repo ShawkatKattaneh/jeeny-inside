@@ -11,7 +11,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { FastifyInstance } from "fastify";
 import type { Persona, RideRequest, StateSnapshot, TripPassenger } from "../../shared/schemas";
 import { PERSONAS } from "../../shared/personas";
-import { board, cancel, createRequest, dropOff, startTrip, type RideState } from "../../engine/rides";
+import { board, cancel, confirmArrival, createRequest, dropOff, startTrip, type RideState } from "../../engine/rides";
 import { dispatchRequest } from "../../engine/dispatch";
 import { advance } from "../../engine/simulation";
 import { tapIn } from "../../engine/tapIn";
@@ -373,6 +373,10 @@ describe("Driver: read-only Tap-In", () => {
     e.run((s) => startTrip(s, e.id));
     e.run((s) => advance(s, 10)); // at b
     e.tap(e.id, "b");
+    // A Tap-In does not count as the driver's arrival: the driver still confirms arrival, then boarding.
+    const before = render("/driver", <DriverHome store={liveStore(e.rec.snapshot())} api={neverDriver} personas={PERSONAS} />, "/driver");
+    expect([...before.matchAll(/data-testid="trip-action"[^>]*>([^<]*)</g)].map((m) => m[1])).toEqual(["Arrived at pickup"]);
+    e.run((s) => confirmArrival(s, "TRIP-0001"));
     const html = render("/driver", <DriverHome store={liveStore(e.rec.snapshot())} api={neverDriver} personas={PERSONAS} />, "/driver");
     expect(html).toMatch(/data-testid="driver-tapin"[^>]*>Tapped in · not boarded</);
     expect([...html.matchAll(/data-testid="trip-action"[^>]*>([^<]*)</g)].map((m) => m[1])).toEqual(["Confirm boarding"]);

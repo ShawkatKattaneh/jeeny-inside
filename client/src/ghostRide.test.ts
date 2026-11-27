@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { io } from "socket.io-client";
 import type { StateSnapshot } from "../../shared/schemas";
-import { board as engineBoard, createRequest, startTrip as engineStart, type RideState } from "../../engine/rides";
+import { board as engineBoard, confirmArrival as engineArrive, createRequest, startTrip as engineStart, type RideState } from "../../engine/rides";
 import { dispatchRequest } from "../../engine/dispatch";
 import { advance } from "../../engine/simulation";
 import { createBookingController } from "./lib/booking";
@@ -207,14 +207,19 @@ describe("Driver shared trip view", () => {
     // Being assigned does not mean on board.
     expect(view(snap).shared!.riders.map((r) => r.state)).toEqual(["waiting", "waiting"]);
     tick(10);
+    // Final pass: at each stop the driver first confirms arrival (one trip-level step), then acts per rider.
+    expect(actionsOf(rec.snapshot())).toEqual([`arrive ${A}`]);
+    run((s) => engineArrive(s, "TRIP-0001"));
     expect(actionsOf(rec.snapshot())).toEqual([`board ${A}`]); // at b: only Lina boards
     run((s) => engineBoard(s, A));
     tick(10);
+    run((s) => engineArrive(s, "TRIP-0001"));
     snap = rec.snapshot();
     expect(actionsOf(snap)).toEqual([`board ${B}`]); // at c: only Omar
     expect(view(snap).shared!.riders.map((r) => r.state)).toEqual(["on_board", "waiting"]);
     run((s) => engineBoard(s, B));
     tick(10);
+    run((s) => engineArrive(s, "TRIP-0001"));
     expect(actionsOf(rec.snapshot())).toEqual([`drop-off ${A}`]); // at d: only Lina leaves
   });
 
@@ -243,21 +248,25 @@ describe("Driver shared trip view", () => {
 
     await sync("join", (d) => d.trips[0]?.passengers.length === 2);
     await step(`start ${A}`);
-    await step(`board ${A}`, 10);
-    await step(`board ${B}`, 10);
-    await step(`drop-off ${A}`, 10);
+    await step(`arrive ${A}`, 10);
+    await step(`board ${A}`);
+    await step(`arrive ${B}`, 10);
+    await step(`board ${B}`);
+    await step(`arrive ${A}`, 10);
+    await step(`drop-off ${A}`);
     const afterOne = await sync("Lina completed", (d) => d.requests.find((r) => r.id === A)?.status === "completed");
     const t = afterOne.data!.trips[0]!;
     expect(t.status).toBe("active");
     expect(view(afterOne.data!).shared!.riders.map((r) => r.state)).toEqual(["dropped_off", "on_board"]);
     expect(afterOne.data!.requests.find((r) => r.id === B)!.status).toBe("on_board");
     expect(afterOne.data!.carts.find((c) => c.id === "CART-01")).toMatchObject({ status: "occupied", passengerCount: 1 });
-    await step(`drop-off ${B}`, 10);
+    await step(`arrive ${B}`, 10);
+    await step(`drop-off ${B}`);
     const done = await sync("trip completed", (d) => d.trips[0]?.status === "completed");
     expect(openTripsForCart(done.data!, "CART-01")).toEqual([]);
     expect(urls.map((u) => u.replace(live.url, ""))).toEqual([
-      `/api/ride-requests/${A}/start`, `/api/ride-requests/${A}/board`, `/api/ride-requests/${B}/board`,
-      `/api/ride-requests/${A}/drop-off`, `/api/ride-requests/${B}/drop-off`,
+      `/api/ride-requests/${A}/start`, "/api/trips/TRIP-0001/arrive", `/api/ride-requests/${A}/board`, "/api/trips/TRIP-0001/arrive", `/api/ride-requests/${B}/board`,
+      "/api/trips/TRIP-0001/arrive", `/api/ride-requests/${A}/drop-off`, "/api/trips/TRIP-0001/arrive", `/api/ride-requests/${B}/drop-off`,
     ]);
   });
 
@@ -287,8 +296,9 @@ describe("Driver shared trip view", () => {
     const { rec, run, A, tick } = sharedTrip();
     const seen = new Set<string>();
     const collect = () => view(rec.snapshot()).actions.forEach((a) => seen.add(a.action));
-    collect(); run((s) => engineStart(s, A)); collect(); tick(10); collect(); run((s) => engineBoard(s, A)); collect();
-    expect([...seen].sort()).toEqual(["board", "start"]);
+    collect(); run((s) => engineStart(s, A)); collect(); tick(10); collect(); run((s) => engineArrive(s, "TRIP-0001")); collect(); run((s) => engineBoard(s, A)); collect();
+    // "arrive" (final pass) confirms the driver's arrival at a stop; like start and board, it never adds a rider.
+    expect([...seen].sort()).toEqual(["arrive", "board", "start"]);
   });
 
   it("13. a solo trip keeps the Phase 3 view: no shared view, one next step", () => {

@@ -7,6 +7,7 @@ import { BusyLabel } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { arrivalState, passengerOf, showTapInEntry, tapPath } from "../lib/tapIn";
 import { FareLine } from "./FareInfo";
+import { etaText, useRideEta } from "../lib/rideEta";
 import { formatSimTime, locationName } from "./format";
 import { useStudent } from "./studentContext";
 
@@ -102,6 +103,12 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
         {phaseDetail(ride, campus)}
         {!ride.synced && <span className="mt-1 block text-[13px] text-muted">Confirming with live updates…</span>}
       </p>
+      <StudentEta ride={ride} />
+      {ride.phase === "requested" && ride.synced && (
+        <p className="rounded-tile bg-info-tint px-3 py-2 text-[13px] text-ink" data-testid="awaiting-dispatch-note">
+          In this demo, Operations assigns carts: your request waits until the Operations Center dispatches it. No arrival time is shown until a cart is assigned.
+        </p>
+      )}
       {sharedLines.length > 0 && (
         <ul className="flex flex-col gap-0.5 rounded-tile bg-brand-tint px-3 py-2 text-[13px] text-ink" data-testid="shared-info">
           {sharedLines.map((l) => <li key={l}>{l}</li>)}
@@ -164,6 +171,34 @@ export function RideStatusCard({ ride, showDetailsLink = true }: { ride: Student
         )}
       </div>
     </Card>
+  );
+}
+
+/** ETA and progress for a ride with a cart (the server's estimate on the simulated route). */
+function StudentEta({ ride }: { ride: StudentRide }) {
+  const { realtime } = useStudent();
+  const driving = ride.active && ride.cart !== null && ride.synced;
+  const eta = useRideEta(driving ? ride.request.id : null, realtime.data?.revision ?? null, driving);
+  const arrivalConfirmed = !!ride.trip && ride.trip.status === "active" && ride.trip.stops[ride.trip.stopIndex]?.arrivedAtMs !== undefined && (ride.phase === "at_pickup" || ride.phase === "at_destination");
+  if (!eta && !arrivalConfirmed) return null;
+  const toPickup = eta?.pickupSeconds !== null && eta?.pickupSeconds !== undefined;
+  return (
+    <div className="flex flex-col gap-1.5 rounded-tile bg-surface px-3 py-2.5" data-testid="ride-eta">
+      {arrivalConfirmed && <p className="text-[14px] font-semibold text-ink" data-testid="ride-arrival-confirmed">Your driver confirmed arrival{ride.phase === "at_pickup" ? " at your pickup" : ""}.</p>}
+      {eta && (
+        <p className="text-[14px] text-ink">
+          {toPickup
+            ? eta.pickupSeconds === 0 ? "Cart at your pickup" : <>Cart reaches your pickup in <b>{etaText(eta.pickupSeconds!)}</b></>
+            : eta.destinationSeconds === 0 ? "At your destination" : <>Arriving at your destination in <b>{etaText(eta.destinationSeconds)}</b></>}
+          <span className="text-[13px] text-muted"> · estimated</span>
+        </p>
+      )}
+      {eta?.legProgress !== null && eta?.legProgress !== undefined && (
+        <span className="block h-1.5 overflow-hidden rounded-full bg-line" role="progressbar" aria-label="Progress on the current leg" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(eta.legProgress * 100)}>
+          <span className="block h-full rounded-full bg-brand transition-[width] duration-1000 ease-linear" style={{ width: `${Math.round(eta.legProgress * 100)}%` }} />
+        </span>
+      )}
+    </div>
   );
 }
 

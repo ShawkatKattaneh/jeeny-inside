@@ -4,6 +4,7 @@ import { LOCATION_TYPE_LABEL } from "../lib/mapGeometry";
 import { PrimaryButton } from "../ui/Button";
 import { ChevronDownIcon, SwapIcon } from "../ui/icons";
 import { FareLine } from "./FareInfo";
+import { loyaltyOf } from "./loyalty";
 import { useBookingState, useStudent } from "./studentContext";
 
 export interface Selection {
@@ -17,7 +18,7 @@ export interface Selection {
  * moment of submission and ignores taps while a request is in flight.
  */
 export function BookingPanel({ selection, onChange }: { selection: Selection; onChange: (s: Selection) => void }) {
-  const { campus, persona, realtime, booking } = useStudent();
+  const { campus, persona, realtime, booking, rides } = useStudent();
   const state = useBookingState(booking);
   const stops = stopLocations(campus);
   const pickupFieldId = useId();
@@ -130,6 +131,11 @@ export function BookingPanel({ selection, onChange }: { selection: Selection; on
 
       <div className="rounded-card bg-surface px-4 py-3 ring-1 ring-line">
         <FareLine />
+        {loyaltyOf(rides).freeRideDue && (
+          <p className="mt-2 border-t border-line pt-2 text-[13px] font-semibold text-ink" data-testid="free-ride-due">
+            Loyalty: this ride will be free. The server applies it when you request.
+          </p>
+        )}
       </div>
 
       <div id={messageId} className="min-h-5 text-sm empty:hidden">

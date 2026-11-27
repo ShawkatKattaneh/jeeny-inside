@@ -2,6 +2,8 @@ import { SETTINGS } from "../../../shared/settings";
 import type { RideRequest } from "../../../shared/schemas";
 import { Badge } from "../ui/Badge";
 import { formatJod } from "./format";
+import { loyaltyLine } from "./loyalty";
+import { useStudentOptional } from "./studentContext";
 
 /**
  * The fare for one ride. Before booking it is the approved demo rate (shared/settings.ts); after
@@ -31,6 +33,16 @@ export function FareLine({ request }: { request?: RideRequest }) {
   );
 }
 
+/** The student's own loyalty standing, from their rides in the live state (the server grants the free ride). */
+function LoyaltyStatus() {
+  const data = useStudentOptional();
+  return (
+    <p className="mb-2 mt-2 text-[13px] font-semibold text-ink" data-testid="loyalty-status">
+      {data ? loyaltyLine(data.rides) : `Free rides are granted by the server after ${SETTINGS.loyaltyPaidRidesForFree} completed paid rides.`}
+    </p>
+  );
+}
+
 /** The approved pricing rules, as an explanation only. Nothing here is calculated per student. */
 export function PricingExplainer() {
   return (
@@ -43,9 +55,7 @@ export function PricingExplainer() {
         <li>Loyalty rule: after {SETTINGS.loyaltyPaidRidesForFree} completed paid rides, the next one is free. Cancelled and free rides do not count.</li>
         <li>Shared rides cost the same {formatJod(SETTINGS.sharedFareJod)} per rider: each rider has their own fare, with no discount or surcharge.</li>
       </ul>
-      <p className="mb-2 mt-2 text-[13px] font-semibold text-ink" data-testid="loyalty-limitation">
-        Loyalty tracking is not active in this prototype yet, so no free ride is counted or awarded.
-      </p>
+      <LoyaltyStatus />
     </details>
   );
 }

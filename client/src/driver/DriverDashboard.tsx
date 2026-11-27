@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
-import type { Persona } from "../../../shared/schemas";
+import type { Persona, StateSnapshot } from "../../../shared/schemas";
 import { useCampus } from "../lib/campusContext";
 import { createDriverActionController } from "../lib/driverActions";
-import { STAGE_LABEL, driverCartLink, openTripsForCart, shownTrip } from "../lib/driverWork";
+import { CART_STATUS_LABEL, STAGE_LABEL, driverCartLink, openTripsForCart, shownTrip } from "../lib/driverWork";
 import { fetchPersonas } from "../lib/api";
 import { useRealtime, useRealtimeStore } from "../lib/realtimeContext";
 import { createDriverApi, type DriverApi } from "../lib/rideApi";
@@ -53,7 +53,6 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-[26px] font-extrabold leading-tight tracking-tight">Driver Mode</h1>
-        <Badge>Demo persona</Badge>
       </div>
       <LiveStatus status={realtime.status} />
     </div>
@@ -120,18 +119,26 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
 
       {cart && (
         <>
-          <section className="flex flex-col gap-3" aria-label="Your cart and trip">
+          <DriverSections hasTrip={trips.length > 0} />
+          <section id="driver-trip" className="scroll-mt-20 flex flex-col gap-3" aria-label="Your cart and trip">
             {finished && (
-              <p role="status" className="rounded-tile bg-surface px-4 py-3 text-sm" data-testid="trip-finished">
-                {finished.id} is {finished.status}.{" "}
-                {actionState.status === "success" && actionState.binding.tripId === finished.id ? actionState.message : ""}
-              </p>
+              <TripFinished trip={finished} data={data} personas={personas} message={actionState.status === "success" && actionState.binding.tripId === finished.id ? actionState.message : ""} />
             )}
 
             {trips.length === 0 ? (
-              <Card className="px-4 py-6 text-center text-sm" data-testid="no-trip">
-                <p className="font-semibold">No trip assigned to your cart</p>
-                <p className="mt-1 text-muted">When a ride is dispatched to {cart.label}, it appears here.</p>
+              <Card className="flex flex-col gap-3 px-4 py-5 text-sm" data-testid="no-trip">
+                <div className="text-center">
+                  <p className="text-[17px] font-bold">No trip assigned to your cart</p>
+                  <p className="mt-1 text-muted">When a ride is dispatched to {cart.label}, it appears here automatically. No reload is needed.</p>
+                </div>
+                <p className="rounded-tile bg-info-tint px-3 py-2 text-[13px] text-ink" data-testid="awaiting-dispatch">
+                  {(() => {
+                    const n = data.requests.filter((r) => r.status === "requested").length;
+                    return n === 0
+                      ? "No ride requests are waiting right now. In this demo, the Operations Center dispatches each request to the best available cart."
+                      : `${n} ride request${n === 1 ? " is" : "s are"} waiting for the Operations Center to dispatch ${n === 1 ? "it" : "them"}. Dispatch chooses the best available cart, so a request may go to another cart.`;
+                  })()}
+                </p>
               </Card>
             ) : (
               <>
@@ -160,10 +167,10 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
               </>
             )}
 
-            <CartCard cart={cart} campus={campus} />
+            <div id="driver-cart" className="scroll-mt-20"><CartCard cart={cart} campus={campus} /></div>
           </section>
 
-          <section aria-label="Campus map">
+          <section id="driver-map" className="scroll-mt-20" aria-label="Campus map">
             <figure className="flex flex-col gap-2 rounded-card bg-card p-2 ring-1 ring-line">
               <CampusMap
                 campus={campus}
@@ -179,14 +186,57 @@ export function DriverDashboard({ persona, api: injectedApi, personas: injectedP
                 }}
               />
               <figcaption className="flex flex-wrap items-center gap-2 px-2 pb-1 text-[13px] text-muted">
-                {campus.fictional && <Badge>Fictional campus</Badge>}
-                <span>Demo campus map: schematic, not to scale, not GPS. Your cart is shown at its simulated position; it moves only when the simulation advances.</span>
+                <span>Schematic campus map{campus.fictional ? " (sample campus)" : ""}. Your cart's position is simulated, not GPS.</span>
               </figcaption>
             </figure>
           </section>
         </>
       )}
     </Page>
+  );
+}
+
+/** Trip completed (or cancelled): the trip's riders and their final state, from the live state. */
+function TripFinished({ trip, data, personas, message }: { trip: StateSnapshot["trips"][number]; data: StateSnapshot; personas: Persona[]; message: string }) {
+  const cart = data.carts.find((c) => c.id === trip.cartId);
+  const name = (studentId: string) => personas.find((p) => p.id === studentId && p.role === "student")?.name;
+  const done = trip.status === "completed";
+  return (
+    <Card className="flex flex-col gap-3 p-4" role="status" data-testid="trip-finished">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[13px] text-muted">{trip.id} · {cart?.label ?? trip.cartId}</div>
+          <h2 className="text-[22px] font-extrabold tracking-tight">{done ? "Trip completed" : "Trip cancelled"}</h2>
+        </div>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[13px] font-bold ${done ? "bg-success-tint text-ink" : "bg-surface text-ink-2"}`}><span className="sr-only">{trip.id} is </span>{done ? "Completed" : "Cancelled"}</span>
+      </div>
+      {message && <p className="text-[14px] text-ink">{message}</p>}
+      <ul className="flex flex-col divide-y divide-line rounded-tile bg-surface px-3">
+        {trip.passengers.map((p) => {
+          const r = data.requests.find((x) => x.id === p.requestId);
+          const who = r ? (name(r.studentId) ? `${name(r.studentId)} (${p.requestId})` : p.requestId) : p.requestId;
+          return (
+            <li key={p.requestId} className="flex items-center justify-between gap-2 py-2 text-[14px]">
+              <span className="font-semibold">{who}</span>
+              <span className="text-[13px] text-ink-2">{p.cancelled ? "Cancelled" : p.droppedOff ? "Dropped off" : p.boarded ? "On board" : "Not boarded"}</span>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="text-[13px] text-muted">{cart ? `${cart.label} is now ${CART_STATUS_LABEL[cart.status].toLowerCase()}, with ${cart.passengerCount} of ${cart.seats} seats taken.` : ""}</p>
+    </Card>
+  );
+}
+
+/** In-page shortcuts to the Driver sections (trip, passengers and actions, cart, map). */
+function DriverSections({ hasTrip }: { hasTrip: boolean }) {
+  const items: [string, string][] = [...(hasTrip ? [["driver-trip", "Trip"] as [string, string]] : []), ["driver-cart", "Cart"], ["driver-map", "Map"]];
+  return (
+    <nav aria-label="Driver sections" className="-mx-4 flex gap-1.5 overflow-x-auto px-4">
+      {items.map(([id, label]) => (
+        <a key={id} href={`#${id}`} className="inline-flex min-h-11 shrink-0 items-center rounded-full bg-card px-4 text-[14px] font-semibold text-ink-2 ring-1 ring-line hover:text-ink">{label}</a>
+      ))}
+    </nav>
   );
 }
 

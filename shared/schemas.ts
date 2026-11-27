@@ -232,6 +232,12 @@ export const TripStop = z.object({
   locationId: LocationId,
   board: z.array(z.string()),
   alight: z.array(z.string()),
+  /**
+   * When the driver confirmed arriving at this stop (POST /api/trips/:tripId/arrive), in server simulation
+   * time (ms, like updatedAt). Recorded only while the cart is stopped at the stop and it is the trip's
+   * current stop; write-once. A record of the driver's confirmation: it boards or drops off nobody.
+   */
+  arrivedAtMs: z.number().int().min(0).optional(),
 });
 
 /** A route on the campus graph, in the same shape `shortestRoute` returns (minus its length). */
@@ -368,6 +374,44 @@ export const AdvanceSimulationBody = z
   .strict();
 export type AdvanceSimulationBody = z.infer<typeof AdvanceSimulationBody>;
 
+/**
+ * Simulated movement (server-driven): while running, the server itself advances the simulation clock
+ * once a second by `speed` simulated seconds, through the same engine `advance` as the manual control,
+ * and publishes each step as a normal revision. Only while a trip is driving. Not persisted: a restarted
+ * server starts paused.
+ */
+export const AUTO_ADVANCE_SPEEDS = [1, 2, 5, 10] as const;
+export const AutoAdvanceBody = z
+  .object({
+    running: z.boolean("running must be true or false"),
+    speed: z.union(AUTO_ADVANCE_SPEEDS.map((n) => z.literal(n)) as unknown as [z.ZodLiteral<1>, z.ZodLiteral<2>, z.ZodLiteral<5>, z.ZodLiteral<10>]).optional(),
+  })
+  .strict();
+export type AutoAdvanceBody = z.infer<typeof AutoAdvanceBody>;
+export const AutoAdvanceStatus = z.object({ running: z.boolean(), speed: z.number(), tickMs: z.number() });
+export type AutoAdvanceStatus = z.infer<typeof AutoAdvanceStatus>;
+
+/** POST /api/mission/run: Mission Mode scenario options (all optional; defaults in engine/mission.ts). */
+export const MissionRunBody = z
+  .object({
+    seed: z.number().int("seed must be a whole number").min(1).max(1_000_000).optional(),
+    requests: z.number().int().min(2, "at least 2 requests").max(40, "at most 40 requests").optional(),
+    sharedShare: z.number().min(0).max(1).optional(),
+  })
+  .strict();
+export type MissionRunBody = z.infer<typeof MissionRunBody>;
+
+/** GET /api/ride-requests/:id/eta: the engine's estimate for a ride with a cart (simulated driving). */
+export const RideEtaResponse = z.object({
+  requestId: z.string(),
+  revision: z.number().int().min(0),
+  pickupSeconds: z.number().nullable(),
+  destinationSeconds: z.number(),
+  /** Share of the current leg already driven, 0 to 1; null when the trip is not driving. */
+  legProgress: z.number().min(0).max(1).nullable(),
+});
+export type RideEtaResponse = z.infer<typeof RideEtaResponse>;
+
 /** Ride lifecycle actions (dispatch, start, board, drop-off, cancel) take no client fields at all. */
 export const EmptyActionBody = z.object({}).strict().optional();
 
@@ -400,6 +444,7 @@ export const StateOperation = z.enum([
   "ride.dropped_off",
   "ride.cancelled",
   "ride.tapped_in",
+  "trip.arrived",
   "simulation.advanced",
   "state.changed",
 ]);

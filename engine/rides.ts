@@ -47,6 +47,8 @@ export type RideErrorCode =
   | "CANNOT_CANCEL_ON_BOARD"
   | "ALREADY_CANCELLING"
   | "NOT_AT_STOP"
+  | "ALREADY_ARRIVED"
+  | "UNKNOWN_TRIP"
   | "INVALID_MOVEMENT"
   | "INCONSISTENT_STATE"
   // Phase 4 (Ghost Ride joins): why a shared request cannot join a trip.
@@ -388,12 +390,28 @@ export function createRequest(state: RideState, input: RideRequestInput): RideRe
 
   const t = nowMs(state);
   // Same simulated fare for every request, solo or shared (D8, F1): no discount and no surcharge.
+  // Loyalty (D8 + F2): after N completed paid rides, the next ride is free (fare 0).
+  const free = loyaltyProgress(state, studentId).freeRideDue;
   const request = freezeRequest(RideRequest.parse({
     id: `REQ-${pad(state.nextRequestNo)}`, studentId, pickupId, destinationId,
     mode, priority: false, status: "requested", createdAt: t, updatedAt: t,
-    fareJod: mode === "shared" ? SETTINGS.sharedFareJod : SETTINGS.fareJod, freeLoyaltyRide: false,
+    fareJod: free ? 0 : mode === "shared" ? SETTINGS.sharedFareJod : SETTINGS.fareJod, freeLoyaltyRide: free,
   }));
   return finish(withChanges(state, { requests: [request], nextRequestNo: state.nextRequestNo + 1 }), { request });
+}
+
+/**
+ * Loyalty (D8 + F2, settings.loyaltyPaidRidesForFree): completed paid rides since the student's last
+ * completed free ride, in request order. Cancelled rides and free rides never count; a free ride is used up
+ * only when it is completed (a cancelled free ride leaves the next request free). Computed from the saved
+ * requests, so it needs no extra stored counter.
+ */
+export function loyaltyProgress(state: RideState, studentId: string): { paidSinceFree: number; needed: number; freeRideDue: boolean } {
+  const needed = SETTINGS.loyaltyPaidRidesForFree;
+  let paidSinceFree = 0;
+  const mine = [...state.requests.values()].filter((r) => r.studentId === studentId && r.status === "completed").sort((a, b) => (a.id < b.id ? -1 : 1));
+  for (const r of mine) paidSinceFree = r.freeLoyaltyRide ? 0 : paidSinceFree + 1;
+  return { paidSinceFree, needed, freeRideDue: paidSinceFree >= needed };
 }
 
 /**
@@ -468,6 +486,26 @@ export function startTrip(state: RideState, requestId: string): RideResult<{ tri
     if (r?.status === "assigned") riders.push(freezeRequest({ ...r, status: "arriving", updatedAt: nowMs(state) }));
   }
   return finish(withChanges(state, { requests: riders, trips: [started] }), { trip: started });
+}
+
+/**
+ * The driver confirms arriving at the trip's current stop. Allowed only while the trip is active, the cart
+ * is stopped at that stop's location, and arrival there was not confirmed before. It records the time on
+ * the stop and changes nothing else: no rider is boarded or dropped off, no status moves (those stay the
+ * driver's own board and drop-off actions).
+ */
+export function confirmArrival(state: RideState, tripId: string): RideResult<{ trip: Readonly<Trip> }> {
+  const trip = state.trips.get(tripId);
+  if (!trip) return fail("UNKNOWN_TRIP", `No trip ${tripId}`);
+  if (trip.status !== "active") return fail("INVALID_TRANSITION", `${tripId} is ${trip.status}; arrival can be confirmed only on an active trip`);
+  const stop = trip.stops[trip.stopIndex];
+  if (!stop) return fail("INVALID_TRANSITION", `${tripId} has no stop left to arrive at`);
+  const cart = getCart(state.fleet, trip.cartId);
+  if (!cart.ok) return fail("INCONSISTENT_STATE", cart.error.message);
+  if (!atLocation(cart.cart, stop.locationId)) return fail("NOT_AT_STOP", `${trip.cartId} has not reached "${stop.locationId}" yet`);
+  if (stop.arrivedAtMs !== undefined) return fail("ALREADY_ARRIVED", `Arrival at "${stop.locationId}" was already confirmed for ${tripId}`);
+  const arrived = makeTrip({ ...trip, stops: trip.stops.map((s, i) => (i === trip.stopIndex ? { ...s, arrivedAtMs: nowMs(state) } : s)) });
+  return finish(withChanges(state, { trips: [arrived] }), { trip: arrived });
 }
 
 /**
